@@ -21,6 +21,7 @@ TraceManager::TraceManager()
    , m_num_threads_running(0)
    , m_done(0)
    , m_tracefiles(0)
+   , m_responsefiles(0)
    , m_trace_prefix("")
 {
 }
@@ -161,7 +162,6 @@ UserTraceManager::UserTraceManager()
    , m_num_apps(Sim()->getCfg()->getInt("traceinput/num_apps"))
    , m_num_apps_nonfinish(m_num_apps)
    , m_app_info(m_num_apps)
-   , m_responsefiles(m_num_apps)
 {
    setupTraceFiles(0);
 }
@@ -174,6 +174,7 @@ UserTraceManager::~UserTraceManager()
 void UserTraceManager::setupTraceFiles(int index)
 {
    m_tracefiles.resize(m_num_apps);
+   m_responsefiles.resize(m_num_apps);
    m_trace_prefix = Sim()->getCfg()->getStringArray("traceinput/trace_prefix", index);
 
    if (m_emulate_syscalls)
@@ -409,9 +410,10 @@ void SystemTraceManager::init()
    for (UInt32 threadid = 0; threadid < m_num_threads; threadid ++)
    {
       String tracefile = m_tracefiles[threadid];
+      String responsefile = m_responsefiles[threadid];
       m_num_threads_running++;
       Thread *thread = Sim()->getThreadManager()->createThread(0, INVALID_THREAD_ID);
-      TraceThread *tthread = new TraceThread(thread, SubsecondTime::Zero(), tracefile, "", 0, false);
+      TraceThread *tthread = new TraceThread(thread, SubsecondTime::Zero(), tracefile, responsefile, 0, false);
       m_threads.push_back(tthread);
    }
 }
@@ -427,21 +429,16 @@ void SystemTraceManager::cleanup()
 void SystemTraceManager::setupTraceFiles(int index)
 {
    m_tracefiles.resize(m_num_threads);
+   m_responsefiles.resize(m_num_threads);
    m_trace_prefix = Sim()->getCfg()->getStringArray("traceinput/trace_prefix", index);
 
-   if (m_trace_prefix != "")
+   if (m_trace_prefix == "")
+      LOG_PRINT_ERROR("No traceinput/trace_prefix provided for system simulation.");
+
+   for (UInt32 i = 0 ; i < m_num_threads ; i++ )
    {
-      for (UInt32 i = 0 ; i < m_num_threads ; i++ )
-      {
-         m_tracefiles[i] = m_trace_prefix + + "vcpu" + itostr(i) + ".sift";
-      }
-   }
-   else
-   {
-      for (UInt32 i = 0 ; i < m_num_threads ; i++ )
-      {
-         m_tracefiles[i] = Sim()->getCfg()->getStringArray("traceinput/vcpu_" + itostr(i), index);
-      }
+      m_tracefiles[i] = m_trace_prefix + + "vcpu" + itostr(i) + ".sift";
+      m_responsefiles[i] = m_trace_prefix + + "response.vcpu" + itostr(i) + ".sift";
    }
 }
 

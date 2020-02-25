@@ -31,6 +31,7 @@ class TraceManager
       UInt32 m_num_threads_running;
       Semaphore m_done;
       std::vector<String> m_tracefiles;
+      std::vector<String> m_responsefiles;
       String m_trace_prefix;
 
       friend class Monitor;
@@ -79,7 +80,6 @@ class UserTraceManager : public TraceManager
       UInt32 m_num_apps;
       UInt32 m_num_apps_nonfinish;  //< Number of applications that have yet to complete their first run
       std::vector<app_info_t> m_app_info;
-      std::vector<String> m_responsefiles;
       Lock m_lock;
 
       String getFifoName(app_id_t app_id, UInt64 thread_num, bool response, bool create);
