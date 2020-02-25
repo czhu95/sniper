@@ -18,6 +18,7 @@ def usage():
         '  [-c [objname:]<name[.cfg]>,<name2[.cfg]>,...]' + \
         '  [-c <sniper-options: section/key=value>]' + \
         '  [-s <script>]' + \
+        '  [-q]' + \
         '  [--roi]' + \
         '  [--roi-script]' + \
         '  [--viz]' + \
@@ -107,6 +108,7 @@ tracegen = None
 trace_extra_args = []
 verbose = False
 use_pa = True
+qemu_system = False
 
 
 if not sys.argv[1:]:
@@ -202,7 +204,7 @@ record_trace_passthrough = [ 'pid-continue', 'stop-address=', 'frontend-option='
 try:
   opts, cmdline = getopt.getopt(
     sys.argv[1:],
-    "hvn:m:d:c:g:s:",
+    "hvqn:m:d:c:g:s:",
     [
       "roi", "roi-script",
       "viz", "viz-aso",
@@ -236,6 +238,8 @@ for o, a in opts:
     sys.exit()
   if o == '-v':
     verbose = True
+  if o == '-q':
+    qemu_system = True
   if o == '-n':
     ncores = int(a)
   if o == '-d':
@@ -517,7 +521,20 @@ if scripts:
   sniperoptions.append('-g --hooks/script0args=')
 
 # If using traces via this front-end, support either multi-program workloads or a single multi-threaded application
-if traces:
+if qemu_system:
+  print '[SNIPER] Using trace generated from QEMU.'
+  if len(traces) != 1 or not os.path.isdir(traces[0]):
+    exit(-1)
+
+  if not traces[0].endswith('/'):
+      traces[0] += '/';
+
+  sniperoptions.append('-g --general/sim_mode=system')
+  sniperoptions.append('-g --traceinput/enabled=true')
+  sniperoptions.append('-g --traceinput/emulate_syscalls=false')
+  sniperoptions.append('-g --traceinput/trace_prefix=%s' % traces[0])
+
+elif traces:
   sniperoptions.append('-g --traceinput/enabled=true')
   if resptraces:
     sniperoptions.append('-g --traceinput/emulate_syscalls=true')
