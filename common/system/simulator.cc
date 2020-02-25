@@ -152,7 +152,15 @@ void Simulator::start()
    m_thread_manager = new ThreadManager();
 
    if (Sim()->getCfg()->getBool("traceinput/enabled"))
-      m_trace_manager = new TraceManager();
+   {
+      String sim_mode = Sim()->getCfg()->getString("general/sim_mode");
+      if (sim_mode == "user")
+         m_trace_manager = new UserTraceManager();
+      else if (sim_mode == "system")
+         m_trace_manager = new SystemTraceManager();
+      else
+        LOG_PRINT_ERROR("Unknown sim_mode %s, should be system or user.", sim_mode.c_str());
+   }
    else
       m_trace_manager = NULL;
 
