@@ -15,7 +15,8 @@
 #if defined(PIN_CRT) && !defined(PINPLAY_SUPPORTED)
 # define SIFT_USE_ZLIB 0
 #else
-# define SIFT_USE_ZLIB 1
+/* TODO: Using zlib is problematic in current version. */
+# define SIFT_USE_ZLIB 0
 #endif
 
 namespace Sift

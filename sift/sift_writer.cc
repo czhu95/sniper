@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/param.h>
+#include <unistd.h>
 
 // Enable (>0) to print out everything we write
 #define VERBOSE 0
