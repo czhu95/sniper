@@ -217,8 +217,10 @@ bool Sift::Reader::Read(Instruction &inst)
             case RecOtherEnd:
                assert(rec.Other.size == 0);
                m_seen_end = true;
+#ifndef __PIN__
                // disable EndResponse as it causes lockups with sift_recorder
-               //sendSimpleResponse(RecOtherEndResponse);
+               sendSimpleResponse(RecOtherEndResponse);
+#endif
                return false;
             case RecOtherIcache:
             {

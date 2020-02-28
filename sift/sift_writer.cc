@@ -131,7 +131,7 @@ void Sift::Writer::End()
 
    if (response)
    {
-/*
+#ifndef __PIN__
       // Disable EndResponse because of lock-up issues with Pin and sift_recorder
       #if VERBOSE > 0
       std::cerr << "[DEBUG:" << m_id << "] Write End - Response Wait" << std::endl;
@@ -141,7 +141,7 @@ void Sift::Writer::End()
       response->read(reinterpret_cast<char*>(&respRec), sizeof(respRec.Other));
       sift_assert(respRec.Other.zero == 0);
       sift_assert(respRec.Other.type == RecOtherEndResponse);
-*/
+#endif
       delete response;
       response = NULL;
    }
