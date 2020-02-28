@@ -11,8 +11,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#define SYSTEM_SIM_NOT_REACHABLE \
-   LOG_PRINT_ERROR("%s should not be called in system simulation", __func__)
+#define SYSTEM_SIM_NOT_REACHABLE                                              \
+   LOG_PRINT_ERROR("%s should not be called in system simulation", __func__); \
+   __builtin_unreachable()
 
 TraceManager::TraceManager()
    : m_monitor(new Monitor(this))
@@ -475,13 +476,11 @@ UInt64 SystemTraceManager::getProgressValue()
 thread_id_t SystemTraceManager::createThread(app_id_t app_id, SubsecondTime time, thread_id_t creator_thread_id)
 {
    SYSTEM_SIM_NOT_REACHABLE;
-   return INVALID_THREAD_ID;
 }
 
 app_id_t SystemTraceManager::createApplication(SubsecondTime time, thread_id_t creator_thread_id)
 {
    SYSTEM_SIM_NOT_REACHABLE;
-   return INVALID_APP_ID;
 }
 
 void SystemTraceManager::endApplication(TraceThread *thread, SubsecondTime time)
