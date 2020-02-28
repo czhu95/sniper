@@ -62,6 +62,8 @@ namespace Sift
          void RoutineAnnounce(uint64_t eip, const char *name, const char *imgname, uint64_t offset, uint32_t line, uint32_t column, const char *filename);
          void ISAChange(uint32_t new_isa);
          bool IsOpen();
+         void VCPUIdle();
+         void VCPUResume();
 
          void setHandleAccessMemoryFunc(HandleAccessMemoryFunc func, void* arg = NULL) { assert(func); handleAccessMemoryFunc = func; handleAccessMemoryArg = arg; }
    };

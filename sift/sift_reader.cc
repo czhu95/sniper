@@ -41,7 +41,10 @@ Sift::Reader::Reader(const char *filename, const char *response_filename, uint32
    , handleEmuArg(NULL)
    , handleRoutineChangeFunc(NULL)
    , handleRoutineAnnounceFunc(NULL)
-   , handleRoutineArg(NULL)   
+   , handleRoutineArg(NULL)
+   , handleVCPUIdleFunc(NULL)
+   , handleVCPUResumeFunc(NULL)
+   , handleVCPUArg(NULL)
    , filesize(0)
    , last_address(0)
    , icache()
@@ -478,14 +481,34 @@ bool Sift::Reader::Read(Instruction &inst)
                free(name);
                free(filename);
                break;
-            }            
+            }
             case RecOtherISAChange:
-            { 
+            {
                assert(rec.Other.size == sizeof(uint32_t));
                uint32_t new_isa;
                input->read(reinterpret_cast<char*>(&new_isa), sizeof(new_isa));
                m_isa = new_isa; // save here new ISA mode value
 
+               break;
+            }
+            case RecOtherVCPUIdle:
+            {
+               #if VERBOSE > 0
+               std::cerr << "[DEBUG:" << m_id << "] Read VCPUIdle" << std::endl;
+               #endif
+               assert(rec.Other.size == 0);
+               sendSimpleResponse(RecOtherVCPUIdleResponse);
+               handleVCPUIdleFunc(handleVCPUArg);
+               break;
+            }
+            case RecOtherVCPUResume:
+            {
+               #if VERBOSE > 0
+               std::cerr << "[DEBUG:" << m_id << "] Read VCPUResume" << std::endl;
+               #endif
+               assert(rec.Other.size == 0);
+               sendSimpleResponse(RecOtherVCPUResumeResponse);
+               handleVCPUResumeFunc(handleVCPUArg);
                break;
             }
             default:

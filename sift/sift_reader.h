@@ -56,6 +56,8 @@ namespace Sift
       typedef void (*HandleRoutineChange)(void* arg, Sift::RoutineOpType event, uint64_t eip, uint64_t esp, uint64_t callEip);
       typedef void (*HandleRoutineAnnounce)(void* arg, uint64_t eip, const char *name, const char *imgname, uint64_t offset, uint32_t line, uint32_t column, const char *filename);
       typedef int32_t (*HandleForkFunc)(void* arg);
+      typedef void (*HandleVCPUIdleFunc)(void *arg);
+      typedef void (*HandleVCPUResumeFunc)(void *arg);
 
       private:
          vistream *input;
@@ -81,6 +83,9 @@ namespace Sift
          HandleRoutineChange handleRoutineChangeFunc;
          HandleRoutineAnnounce handleRoutineAnnounceFunc;
          void *handleRoutineArg;
+         HandleVCPUIdleFunc handleVCPUIdleFunc;
+         HandleVCPUResumeFunc handleVCPUResumeFunc;
+         void *handleVCPUArg;
          uint64_t filesize;
          std::ifstream *inputstream;
 
@@ -127,6 +132,7 @@ namespace Sift
          void setHandleEmuFunc(HandleEmuFunc func, void* arg = NULL) { assert(func); handleEmuFunc = func; handleEmuArg = arg; }
          void setHandleRoutineFunc(HandleRoutineChange funcChange, HandleRoutineAnnounce funcAnnounce, void* arg = NULL) { assert(funcChange); assert(funcAnnounce); handleRoutineChangeFunc = funcChange; handleRoutineAnnounceFunc = funcAnnounce; handleRoutineArg = arg; }
          void setHandleForkFunc(HandleForkFunc func, void* arg = NULL) { assert(func); handleForkFunc = func; handleForkArg = arg;}
+         void setHandleVCPUFunc(HandleVCPUIdleFunc funcIdle, HandleVCPUResumeFunc funcResume, void *arg = NULL) { assert(funcIdle); assert(funcResume); handleVCPUIdleFunc = funcIdle; handleVCPUResumeFunc = funcResume; handleVCPUArg = arg; }
 
          uint64_t getPosition();
          uint64_t getLength();

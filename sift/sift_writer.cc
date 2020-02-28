@@ -1079,3 +1079,65 @@ void Sift::Writer::send_va2pa(uint64_t va)
       }
    }
 }
+
+void Sift::Writer::VCPUIdle()
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write VCPUIdle" << std::endl;
+   #endif
+
+   if (!output)
+   {
+      return;
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherVCPUIdle;
+   rec.Other.size = 0;
+
+   #if VERBOSE_HEX > 1
+   hexdump((char*)&rec, sizeof(rec.Other));
+   #endif
+
+   output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   output->flush();
+
+   initResponse();
+
+   // wait for reply
+   Record respRec;
+   response->read(reinterpret_cast<char*>(&respRec), sizeof(rec.Other));
+   assert(respRec.Other.type == RecOtherVCPUIdleResponse);
+}
+
+void Sift::Writer::VCPUResume()
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write VCPUResume" << std::endl;
+   #endif
+
+   if (!output)
+   {
+      return;
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherVCPUResume;
+   rec.Other.size = 0;
+
+   #if VERBOSE_HEX > 1
+   hexdump((char*)&rec, sizeof(rec.Other));
+   #endif
+
+   output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   output->flush();
+
+   initResponse();
+
+   // wait for reply
+   Record respRec;
+   response->read(reinterpret_cast<char*>(&respRec), sizeof(rec.Other));
+   assert(respRec.Other.type == RecOtherVCPUResumeResponse);
+}
