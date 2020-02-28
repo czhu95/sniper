@@ -34,6 +34,11 @@ namespace config { class Config; }
 class Simulator
 {
 public:
+
+   enum SimMode {
+      USER, SYSTEM
+   };
+
    Simulator();
    ~Simulator();
 
@@ -78,6 +83,7 @@ public:
 
    void setInstrumentationMode(InstMode::inst_mode_t new_mode, bool update_barrier);
    InstMode::inst_mode_t getInstrumentationMode() { return InstMode::inst_mode; }
+   SimMode getSimMode() { return m_sim_mode; }
 
    // Access to the Decoder library for the simulator run
    void createDecoder();
@@ -109,6 +115,7 @@ private:
 
    bool m_running;
    bool m_inst_mode_output;
+   SimMode m_sim_mode;
 
    static Simulator *m_singleton;
 

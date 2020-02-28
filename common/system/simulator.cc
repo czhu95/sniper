@@ -130,10 +130,18 @@ Simulator::Simulator()
 void Simulator::start()
 {
    LOG_PRINT("In Simulator ctor.");
-   
+
    // create a new Decoder object for this Simulator
    createDecoder();
-   
+
+   String sim_mode = Sim()->getCfg()->getString("general/sim_mode");
+   if (sim_mode == "user")
+       m_sim_mode = SimMode::USER;
+   else if (sim_mode == "system")
+       m_sim_mode = SimMode::SYSTEM;
+   else
+       LOG_PRINT_ERROR("Unknown sim_mode %s, should be system or user.", sim_mode.c_str());
+
    m_hooks_manager = new HooksManager();
    m_syscall_server = new SyscallServer();
    m_sync_server = new SyncServer();
@@ -153,13 +161,10 @@ void Simulator::start()
 
    if (Sim()->getCfg()->getBool("traceinput/enabled"))
    {
-      String sim_mode = Sim()->getCfg()->getString("general/sim_mode");
-      if (sim_mode == "user")
+      if (m_sim_mode == SimMode::USER)
          m_trace_manager = new UserTraceManager();
-      else if (sim_mode == "system")
-         m_trace_manager = new SystemTraceManager();
       else
-        LOG_PRINT_ERROR("Unknown sim_mode %s, should be system or user.", sim_mode.c_str());
+         m_trace_manager = new SystemTraceManager();
    }
    else
       m_trace_manager = NULL;
