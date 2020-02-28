@@ -101,7 +101,11 @@ class TraceThread : public Runnable
       static void __handleRoutineAnnounceFunc(void* arg, uint64_t eip, const char *name, const char *imgname, uint64_t offset, uint32_t line, uint32_t column, const char *filename)
       { ((TraceThread*)arg)->handleRoutineAnnounceFunc(eip, name, imgname, offset, line, column, filename); }
       static int32_t __handleForkFunc(void* arg)
-      { return ((TraceThread*)arg)->handleForkFunc();}
+      { return ((TraceThread*)arg)->handleForkFunc(); }
+      static void __handleVCPUIdleFunc(void *arg)
+      { return ((TraceThread*)arg)->handleVCPUIdleFunc(); }
+      static void __handleVCPUResumeFunc(void *arg)
+      { return ((TraceThread*)arg)->handleVCPUResumeFunc(); }
 
       Sift::Mode handleInstructionCountFunc(uint32_t icount);
       void handleCacheOnlyFunc(uint8_t icount, Sift::CacheOnlyType type, uint64_t eip, uint64_t address);
@@ -114,6 +118,8 @@ class TraceThread : public Runnable
       bool handleEmuFunc(Sift::EmuType type, Sift::EmuRequest &req, Sift::EmuReply &res);
       void handleRoutineChangeFunc(Sift::RoutineOpType event, uint64_t eip, uint64_t esp, uint64_t callEip);
       void handleRoutineAnnounceFunc(uint64_t eip, const char *name, const char *imgname, uint64_t offset, uint32_t line, uint32_t column, const char *filename);
+      void handleVCPUIdleFunc();
+      void handleVCPUResumeFunc();
 
       Instruction* decode(Sift::Instruction &inst);
       void handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruction &next_inst, Core *core, bool do_icache_warmup, UInt64 icache_warmup_addr, UInt64 icache_warmup_size);

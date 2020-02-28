@@ -78,6 +78,8 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    m_trace.setHandleForkFunc(TraceThread::__handleForkFunc, this);
    if (Sim()->getRoutineTracer())
       m_trace.setHandleRoutineFunc(TraceThread::__handleRoutineChangeFunc, TraceThread::__handleRoutineAnnounceFunc, this);
+   if (Sim()->getCfg()->getString("general/sim_mode") == "system")
+      m_trace.setHandleVCPUFunc(TraceThread::__handleVCPUIdleFunc, TraceThread::__handleVCPUResumeFunc, this);
 
    if (m_address_randomization)
    {
@@ -385,6 +387,20 @@ void TraceThread::handleRoutineAnnounceFunc(uint64_t eip, const char *name, cons
    Sim()->getRoutineTracer()->addRoutine(eip, name, imgname, offset, column, line, filename);
 }
 
+void TraceThread::handleVCPUIdleFunc()
+{
+   ScopedLock sl(Sim()->getThreadManager()->getLock());
+   Sim()->getThreadManager()->stallThread_async(m_thread->getId(), ThreadManager::STALL_VCPU_HALT,
+                                                m_thread->getCore()->getPerformanceModel()->getElapsedTime());
+}
+
+void TraceThread::handleVCPUResumeFunc()
+{
+   ScopedLock sl(Sim()->getThreadManager()->getLock());
+   SubsecondTime time_wake = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
+   Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time_wake, NULL);
+}
+
 SubsecondTime TraceThread::getCurrentTime() const
 {
    LOG_ASSERT_ERROR(m_thread->getCore() != NULL, "Cannot get time while not on a core");
@@ -441,6 +457,15 @@ Sift::Mode TraceThread::handleInstructionCountFunc(uint32_t icount)
    {
       // Received first instruction, let TraceManager know our SIFT connection is up and running
       Sim()->getTraceManager()->signalStarted();
+      // If we are stalled at beginning because we are simulating system thread
+      if (Sim()->getSimMode() == Simulator::SYSTEM &&
+          Sim()->getThreadManager()->getThreadState(m_thread->getId()) == Core::STALLED &&
+          Sim()->getThreadManager()->getThreadStallReason(m_thread->getId()) == ThreadManager::STALL_VCPU_HALT)
+      {
+         SubsecondTime time = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
+         ScopedLock sl(Sim()->getThreadManager()->getLock());
+         Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time, NULL);
+      }
       m_started = true;
    }
 
@@ -778,19 +803,22 @@ void TraceThread::run()
    m_trace.initStream();
    m_trace_has_pa = m_trace.getTraceHasPhysicalAddresses();
 
-   if (m_thread->getCore() == NULL)
+   // Only wait for a core in user simulation. In system simulation we are always stalled on thread start
+   // because simulated vcpu might be halted at beginning. We wait for first instruction to resume the thread.
+   if (m_thread->getCore() == NULL && Sim()->getSimMode() == Simulator::USER)
    {
       // We didn't get scheduled on startup, wait here
       SubsecondTime time = SubsecondTime::Zero();
       m_thread->reschedule(time, NULL);
    }
 
-   Core *core = m_thread->getCore();
-   PerformanceModel *prfmdl = core->getPerformanceModel();
-
    Sift::Instruction inst, next_inst;
 
    bool have_first = m_trace.Read(inst);
+   // If we fast forward through lift time of the thread, we are finished already now.
+   Core *core = m_thread->getCore();
+   PerformanceModel *prfmdl = core ? core->getPerformanceModel() : NULL;
+
    // Received first instruction, let TraceManager know our SIFT connection is up and running
    Sim()->getTraceManager()->signalStarted();
    m_started = true;
@@ -868,7 +896,7 @@ void TraceThread::run()
 
    printf("[TRACE:%u] -- %s --\n", m_thread->getId(), m_stop ? "STOP" : "DONE");
 
-   SubsecondTime time_end = prfmdl->getElapsedTime();
+   SubsecondTime time_end = prfmdl ? prfmdl->getElapsedTime() : SubsecondTime::Zero();
 
    Sim()->getThreadManager()->onThreadExit(m_thread->getId());
    Sim()->getTraceManager()->signalDone(this, time_end, m_stop /*aborted*/);
