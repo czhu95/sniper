@@ -80,6 +80,7 @@ class TraceThread : public Runnable
       bool m_started;
 
       void run();
+      void signalStarted();
       static Sift::Mode __handleInstructionCountFunc(void* arg, uint32_t icount)
       { return ((TraceThread*)arg)->handleInstructionCountFunc(icount); }
       static void __handleCacheOnlyFunc(void* arg, uint8_t icount, Sift::CacheOnlyType type, uint64_t eip, uint64_t address)
