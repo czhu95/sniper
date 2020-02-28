@@ -116,6 +116,10 @@ namespace Sift
       RecOtherInstructionCount,
       RecOtherCacheOnly,
       RecOtherISAChange,
+      RecOtherVCPUIdle,
+      RecOtherVCPUIdleResponse,
+      RecOtherVCPUResume,
+      RecOtherVCPUResumeResponse,
       RecOtherEnd = 0xff,
    } RecOtherType;
 
