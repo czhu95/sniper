@@ -456,11 +456,18 @@ void SystemThreadManager::onThreadExit(thread_id_t thread_id)
 
    Thread *thread = getThreadFromID(thread_id);
    Core *core = thread->getCore();
-   LOG_ASSERT_ERROR(core != NULL, "Thread ended while not running on a core?");
-   LOG_ASSERT_ERROR(core->getId() == thread_id, "System thread moved.");
 
-   assert(m_thread_state[thread_id].status == Core::RUNNING);
+   // In system simulation, threads might end when halt.
+   LOG_ASSERT_ERROR(core != NULL ||
+                    (m_thread_state[thread_id].status == Core::STALLED &&
+                     m_thread_state[thread_id].stalled_reason == STALL_VCPU_HALT),
+                    "Thread ended while not running on a core?");
+   LOG_ASSERT_ERROR(!core || core->getId() == thread_id, "System thread moved.");
+
    m_thread_state[thread_id].status = Core::IDLE;
+
+   if (!core)
+      core = Sim()->getCoreManager()->getCoreFromID(thread_id);
 
    // Set the CoreState to 'IDLE'
    core->setState(Core::IDLE);
