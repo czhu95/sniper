@@ -82,7 +82,7 @@ void TraceManager::signalStarted()
 
 void TraceManager::signalDone(TraceThread *thread, SubsecondTime time, bool aborted)
 {
-   --m_num_threads_started;
+   --m_num_threads_running;
 }
 
 UInt64 TraceManager::getProgressExpect()
