@@ -93,7 +93,7 @@ class SyscallServer
       typedef std::unordered_map<IntPtr, SimFutex> FutexMap;
       FutexMap m_futexes;
 
-      friend class ThreadManager;
+      friend class UserThreadManager;
 };
 
 #endif

@@ -157,7 +157,10 @@ void Simulator::start()
    m_sampling_manager = new SamplingManager();
    m_fastforward_performance_manager = FastForwardPerformanceManager::create();
    m_rtn_tracer = RoutineTracer::create();
-   m_thread_manager = new ThreadManager();
+   if (m_sim_mode == SimMode::USER)
+      m_thread_manager = new UserThreadManager();
+   else
+      m_thread_manager = new SystemThreadManager();
 
    if (Sim()->getCfg()->getBool("traceinput/enabled"))
    {

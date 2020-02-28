@@ -18,8 +18,12 @@
 #include <sys/syscall.h>
 #include "os_compat.h"
 
+#define SYSTEM_SIM_NOT_REACHABLE                                             \
+   LOG_PRINT_ERROR("%s should not be used in system simulation", __func__);  \
+   __builtin_unreachable()
+
 const char* ThreadManager::stall_type_names[] = {
-   "unscheduled", "broken", "join", "mutex", "cond", "barrier", "futex", "pause", "sleep", "syscall"
+   "unscheduled", "broken", "join", "mutex", "cond", "barrier", "futex", "pause", "sleep", "syscall", "vcpu_halt"
 };
 static_assert(ThreadManager::STALL_TYPES_MAX == sizeof(ThreadManager::stall_type_names) / sizeof(char*),
               "Not enough values in ThreadManager::stall_type_names");
@@ -65,12 +69,6 @@ Thread* ThreadManager::findThreadByTid(pid_t tid)
    return NULL;
 }
 
-Thread* ThreadManager::createThread(app_id_t app_id, thread_id_t creator_thread_id)
-{
-   ScopedLock sl(m_thread_lock);
-   return createThread_unlocked(app_id, creator_thread_id);
-}
-
 Thread* ThreadManager::createThread_unlocked(app_id_t app_id, thread_id_t creator_thread_id)
 {
    thread_id_t thread_id = m_threads.size();
@@ -96,133 +94,6 @@ Thread* ThreadManager::createThread_unlocked(app_id_t app_id, thread_id_t creato
    return thread;
 }
 
-void ThreadManager::onThreadStart(thread_id_t thread_id, SubsecondTime time)
-{
-   ScopedLock sl(m_thread_lock);
-   LOG_PRINT("onThreadStart(%i)", thread_id);
-
-   Thread *thread = getThreadFromID(thread_id);
-
-   m_thread_tls->set(thread);
-   thread->updateCoreTLS();
-
-   // Set thread state to running for the duration of HOOK_THREAD_START, we'll move it to stalled later on if it didn't have a core
-   m_thread_state[thread_id].status = Core::RUNNING;
-
-   HooksManager::ThreadTime args = { thread_id: thread_id, time: time };
-   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_START, (UInt64)&args);
-   // Note: we may have been rescheduled during HOOK_THREAD_START
-   // (Happens if core was occupied during our createThread() but became free since then)
-   CLOG("thread", "Start %d", thread_id);
-
-   Core *core = thread->getCore();
-   if (core)
-   {
-      // Set the CoreState to 'RUNNING'
-      core->setState(Core::RUNNING);
-
-      PerformanceModel *pm = core->getPerformanceModel();
-      // If the core already has a later time, we have to wait
-      time = std::max(time, pm->getElapsedTime());
-      pm->queuePseudoInstruction(new SpawnInstruction(time));
-
-      LOG_PRINT("Setting status[%i] -> RUNNING", thread_id);
-      m_thread_state[thread_id].status = Core::RUNNING;
-
-      HooksManager::ThreadMigrate args = { thread_id: thread_id, core_id: core->getId(), time: time };
-      Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_MIGRATE, (UInt64)&args);
-   }
-   else
-   {
-      m_thread_state[thread_id].status = Core::STALLED;
-      m_thread_state[thread_id].stalled_reason = STALL_UNSCHEDULED;
-   }
-
-   if (m_thread_state[thread_id].waiter != INVALID_THREAD_ID)
-   {
-      getThreadFromID(m_thread_state[thread_id].waiter)->signal(time);
-      m_thread_state[thread_id].waiter = INVALID_THREAD_ID;
-   }
-}
-
-void ThreadManager::onThreadExit(thread_id_t thread_id)
-{
-   ScopedLock sl(m_thread_lock);
-
-   LOG_ASSERT_ERROR((UInt32)thread_id < m_thread_state.size(), "Thread id out of range: %d", thread_id);
-
-   Thread *thread = getThreadFromID(thread_id);
-   Core *core = thread->getCore();
-   LOG_ASSERT_ERROR(core != NULL, "Thread ended while not running on a core?");
-
-   SubsecondTime time = core->getPerformanceModel()->getElapsedTime();
-
-   assert(m_thread_state[thread_id].status == Core::RUNNING);
-   m_thread_state[thread_id].status = Core::IDLE;
-
-   // Implement pthread_join
-   wakeUpWaiter(thread_id, time);
-
-   // Implement CLONE_CHILD_CLEARTID
-   if (thread->m_os_info.clear_tid)
-   {
-      uint32_t zero = 0;
-      core->accessMemory(Core::NONE, Core::WRITE, thread->m_os_info.tid_ptr, (char*)&zero, sizeof(zero));
-
-      SubsecondTime end_time; // ignored
-      Sim()->getSyscallServer()->futexWake(thread_id, (int*)thread->m_os_info.tid_ptr, 1, FUTEX_BITSET_MATCH_ANY, time, end_time);
-   }
-
-   // Set the CoreState to 'IDLE'
-   core->setState(Core::IDLE);
-
-   m_thread_tls->set(NULL);
-   thread->setCore(NULL);
-   thread->updateCoreTLS();
-
-   Sim()->getStatsManager()->logEvent(StatsManager::EVENT_THREAD_EXIT, SubsecondTime::MaxTime(), core->getId(), thread_id, 0, 0, "");
-
-   HooksManager::ThreadTime args = { thread_id: thread_id, time: time };
-   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_EXIT, (UInt64)&args);
-   CLOG("thread", "Exit %d", thread_id);
-}
-
-thread_id_t ThreadManager::spawnThread(thread_id_t thread_id, app_id_t app_id)
-{
-   ScopedLock sl(getLock());
-
-   SubsecondTime time_start = SubsecondTime::Zero();
-   if (thread_id != INVALID_THREAD_ID)
-   {
-      Thread *thread = getThreadFromID(thread_id);
-      Core *core = thread->getCore();
-      time_start = core->getPerformanceModel()->getElapsedTime();
-   }
-
-   Thread *new_thread = createThread_unlocked(app_id, thread_id);
-
-   // Insert the request in the thread request queue
-   ThreadSpawnRequest req = { thread_id, new_thread->getId(), time_start };
-   m_thread_spawn_list.push(req);
-
-   LOG_PRINT("Done with (2)");
-
-   return new_thread->getId();
-}
-
-thread_id_t ThreadManager::getThreadToSpawn(SubsecondTime &time)
-{
-   ScopedLock sl(getLock());
-
-   LOG_ASSERT_ERROR(!m_thread_spawn_list.empty(), "Have no thread to spawn");
-
-   ThreadSpawnRequest req = m_thread_spawn_list.front();
-   m_thread_spawn_list.pop();
-
-   time = req.time;
-   return req.thread_id;
-}
-
 void ThreadManager::waitForThreadStart(thread_id_t thread_id, thread_id_t wait_thread_id)
 {
    ScopedLock sl(getLock());
@@ -236,40 +107,6 @@ void ThreadManager::waitForThreadStart(thread_id_t thread_id, thread_id_t wait_t
       m_thread_state[wait_thread_id].waiter = thread_id;
       self->wait(getLock());
    }
-}
-
-void ThreadManager::moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time)
-{
-   Thread *thread = getThreadFromID(thread_id);
-   CLOG("thread", "Move %d from %d to %d", thread_id, thread->getCore() ? thread->getCore()->getId() : -1, core_id);
-
-   if (Core *core = thread->getCore())
-      core->setState(Core::IDLE);
-
-   if (core_id == INVALID_CORE_ID)
-   {
-      thread->setCore(NULL);
-   }
-   else
-   {
-      if (thread->getCore() == NULL)
-      {
-         // Unless thread was stalled for sync/futex/..., wake it up
-         if (
-            m_thread_state[thread_id].status == Core::STALLED
-            && m_thread_state[thread_id].stalled_reason == STALL_UNSCHEDULED
-         )
-            resumeThread(thread_id, INVALID_THREAD_ID, time);
-      }
-
-      Core *core = Sim()->getCoreManager()->getCoreFromID(core_id);
-      thread->setCore(core);
-      if (getThreadState(thread_id) != Core::STALLED)
-         core->setState(Core::RUNNING);
-   }
-
-   HooksManager::ThreadMigrate args = { thread_id: thread_id, core_id: core_id, time: time };
-   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_MIGRATE, (UInt64)&args);
 }
 
 bool ThreadManager::areAllCoresRunning()
@@ -286,40 +123,6 @@ bool ThreadManager::areAllCoresRunning()
    }
 
    return is_all_running;
-}
-
-void ThreadManager::joinThread(thread_id_t thread_id, thread_id_t join_thread_id)
-{
-   Thread *thread = getThreadFromID(thread_id);
-   Core *core = thread->getCore();
-   SubsecondTime end_time;
-
-   LOG_PRINT("Joining on thread: %d", join_thread_id);
-
-   {
-      ScopedLock sl(getLock());
-
-      if (m_thread_state[join_thread_id].status == Core::IDLE)
-      {
-         LOG_PRINT("Not running.");
-         return;
-      }
-
-      SubsecondTime start_time = core->getPerformanceModel()->getElapsedTime();
-
-      LOG_ASSERT_ERROR(m_thread_state[join_thread_id].waiter == INVALID_THREAD_ID,
-                       "Multiple threads joining on thread: %d", join_thread_id);
-
-      m_thread_state[join_thread_id].waiter = thread_id;
-      end_time = stallThread(thread_id, ThreadManager::STALL_JOIN, start_time);
-   }
-
-   if (thread->reschedule(end_time, core))
-      core = thread->getCore();
-
-   core->getPerformanceModel()->queuePseudoInstruction(new SyncInstruction(end_time, SyncInstruction::JOIN));
-
-   LOG_PRINT("Exiting join thread.");
 }
 
 void ThreadManager::wakeUpWaiter(thread_id_t thread_id, SubsecondTime time)
@@ -402,3 +205,323 @@ bool ThreadManager::anyThreadRunning()
    }
    return false;
 }
+
+Thread* UserThreadManager::createThread(app_id_t app_id, thread_id_t creator_thread_id)
+{
+   ScopedLock sl(m_thread_lock);
+   return createThread_unlocked(app_id, creator_thread_id);
+}
+
+void UserThreadManager::onThreadStart(thread_id_t thread_id, SubsecondTime time)
+{
+   ScopedLock sl(m_thread_lock);
+   LOG_PRINT("onThreadStart(%i)", thread_id);
+
+   Thread *thread = getThreadFromID(thread_id);
+
+   m_thread_tls->set(thread);
+   thread->updateCoreTLS();
+
+   // Set thread state to running for the duration of HOOK_THREAD_START, we'll move it to stalled later on if it didn't have a core
+   m_thread_state[thread_id].status = Core::RUNNING;
+
+   HooksManager::ThreadTime args = { thread_id: thread_id, time: time };
+   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_START, (UInt64)&args);
+   // Note: we may have been rescheduled during HOOK_THREAD_START
+   // (Happens if core was occupied during our createThread() but became free since then)
+   CLOG("user thread", "Start %d", thread_id);
+
+   Core *core = thread->getCore();
+   if (core)
+   {
+      // Set the CoreState to 'RUNNING'
+      core->setState(Core::RUNNING);
+
+      PerformanceModel *pm = core->getPerformanceModel();
+      // If the core already has a later time, we have to wait
+      time = std::max(time, pm->getElapsedTime());
+      pm->queuePseudoInstruction(new SpawnInstruction(time));
+
+      LOG_PRINT("Setting status[%i] -> RUNNING", thread_id);
+      m_thread_state[thread_id].status = Core::RUNNING;
+
+      HooksManager::ThreadMigrate args = { thread_id: thread_id, core_id: core->getId(), time: time };
+      Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_MIGRATE, (UInt64)&args);
+   }
+   else
+   {
+      m_thread_state[thread_id].status = Core::STALLED;
+      m_thread_state[thread_id].stalled_reason = STALL_UNSCHEDULED;
+   }
+
+   if (m_thread_state[thread_id].waiter != INVALID_THREAD_ID)
+   {
+      getThreadFromID(m_thread_state[thread_id].waiter)->signal(time);
+      m_thread_state[thread_id].waiter = INVALID_THREAD_ID;
+   }
+}
+
+void UserThreadManager::onThreadExit(thread_id_t thread_id)
+{
+   ScopedLock sl(m_thread_lock);
+
+   LOG_ASSERT_ERROR((UInt32)thread_id < m_thread_state.size(), "Thread id out of range: %d", thread_id);
+
+   Thread *thread = getThreadFromID(thread_id);
+   Core *core = thread->getCore();
+   LOG_ASSERT_ERROR(core != NULL, "Thread ended while not running on a core?");
+
+   SubsecondTime time = core->getPerformanceModel()->getElapsedTime();
+
+   assert(m_thread_state[thread_id].status == Core::RUNNING);
+   m_thread_state[thread_id].status = Core::IDLE;
+
+   // Implement pthread_join
+   wakeUpWaiter(thread_id, time);
+
+   // Implement CLONE_CHILD_CLEARTID
+   if (thread->m_os_info.clear_tid)
+   {
+      uint32_t zero = 0;
+      core->accessMemory(Core::NONE, Core::WRITE, thread->m_os_info.tid_ptr, (char*)&zero, sizeof(zero));
+
+      SubsecondTime end_time; // ignored
+      Sim()->getSyscallServer()->futexWake(thread_id, (int*)thread->m_os_info.tid_ptr, 1, FUTEX_BITSET_MATCH_ANY, time, end_time);
+   }
+
+   // Set the CoreState to 'IDLE'
+   core->setState(Core::IDLE);
+
+   m_thread_tls->set(NULL);
+   thread->setCore(NULL);
+   thread->updateCoreTLS();
+
+   Sim()->getStatsManager()->logEvent(StatsManager::EVENT_THREAD_EXIT, SubsecondTime::MaxTime(), core->getId(), thread_id, 0, 0, "");
+
+   HooksManager::ThreadTime args = { thread_id: thread_id, time: time };
+   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_EXIT, (UInt64)&args);
+   CLOG("user thread", "Exit %d", thread_id);
+}
+
+thread_id_t UserThreadManager::spawnThread(thread_id_t thread_id, app_id_t app_id)
+{
+   ScopedLock sl(getLock());
+
+   SubsecondTime time_start = SubsecondTime::Zero();
+   if (thread_id != INVALID_THREAD_ID)
+   {
+      Thread *thread = getThreadFromID(thread_id);
+      Core *core = thread->getCore();
+      time_start = core->getPerformanceModel()->getElapsedTime();
+   }
+
+   Thread *new_thread = createThread_unlocked(app_id, thread_id);
+
+   // Insert the request in the thread request queue
+   ThreadSpawnRequest req = { thread_id, new_thread->getId(), time_start };
+   m_thread_spawn_list.push(req);
+
+   LOG_PRINT("Done with (2)");
+
+   return new_thread->getId();
+}
+
+thread_id_t UserThreadManager::getThreadToSpawn(SubsecondTime &time)
+{
+   ScopedLock sl(getLock());
+
+   LOG_ASSERT_ERROR(!m_thread_spawn_list.empty(), "Have no thread to spawn");
+
+   ThreadSpawnRequest req = m_thread_spawn_list.front();
+   m_thread_spawn_list.pop();
+
+   time = req.time;
+   return req.thread_id;
+}
+
+void UserThreadManager::moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time)
+{
+   Thread *thread = getThreadFromID(thread_id);
+   CLOG("thread", "Move %d from %d to %d", thread_id, thread->getCore() ? thread->getCore()->getId() : -1, core_id);
+
+   if (Core *core = thread->getCore())
+      core->setState(Core::IDLE);
+
+   if (core_id == INVALID_CORE_ID)
+   {
+      thread->setCore(NULL);
+   }
+   else
+   {
+      if (thread->getCore() == NULL)
+      {
+         // Unless thread was stalled for sync/futex/..., wake it up
+         if (
+            m_thread_state[thread_id].status == Core::STALLED
+            && m_thread_state[thread_id].stalled_reason == STALL_UNSCHEDULED
+         )
+            resumeThread(thread_id, INVALID_THREAD_ID, time);
+      }
+
+      Core *core = Sim()->getCoreManager()->getCoreFromID(core_id);
+      thread->setCore(core);
+      if (getThreadState(thread_id) != Core::STALLED)
+         core->setState(Core::RUNNING);
+   }
+
+   HooksManager::ThreadMigrate args = { thread_id: thread_id, core_id: core_id, time: time };
+   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_MIGRATE, (UInt64)&args);
+}
+
+void UserThreadManager::joinThread(thread_id_t thread_id, thread_id_t join_thread_id)
+{
+   Thread *thread = getThreadFromID(thread_id);
+   Core *core = thread->getCore();
+   SubsecondTime end_time;
+
+   LOG_PRINT("Joining on thread: %d", join_thread_id);
+
+   {
+      ScopedLock sl(getLock());
+
+      if (m_thread_state[join_thread_id].status == Core::IDLE)
+      {
+         LOG_PRINT("Not running.");
+         return;
+      }
+
+      SubsecondTime start_time = core->getPerformanceModel()->getElapsedTime();
+
+      LOG_ASSERT_ERROR(m_thread_state[join_thread_id].waiter == INVALID_THREAD_ID,
+                       "Multiple threads joining on thread: %d", join_thread_id);
+
+      m_thread_state[join_thread_id].waiter = thread_id;
+      end_time = stallThread(thread_id, ThreadManager::STALL_JOIN, start_time);
+   }
+
+   if (thread->reschedule(end_time, core))
+      core = thread->getCore();
+
+   core->getPerformanceModel()->queuePseudoInstruction(new SyncInstruction(end_time, SyncInstruction::JOIN));
+
+   LOG_PRINT("Exiting join thread.");
+}
+
+
+
+Thread* SystemThreadManager::createThread(app_id_t app_id, thread_id_t creator_thread_id)
+{
+   LOG_ASSERT_ERROR(app_id == INVALID_APP_ID, "System thread should not have valid app_id.");
+   LOG_ASSERT_ERROR(creator_thread_id == INVALID_THREAD_ID, "System thread should not have valid creator_thread_id.");
+   ScopedLock sl(m_thread_lock);
+   return createThread_unlocked(app_id, creator_thread_id);
+}
+
+void SystemThreadManager::onThreadStart(thread_id_t thread_id, SubsecondTime time)
+{
+   ScopedLock sl(m_thread_lock);
+   LOG_PRINT("onThreadStart(%i)", thread_id);
+
+   Thread *thread = getThreadFromID(thread_id);
+
+   m_thread_tls->set(thread);
+   thread->updateCoreTLS();
+
+   // Set thread state to running for the duration of HOOK_THREAD_START, we'll move it to stalled later on if it didn't have a core
+   m_thread_state[thread_id].status = Core::RUNNING;
+
+   HooksManager::ThreadTime args = { thread_id: thread_id, time: time };
+   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_START, (UInt64)&args);
+   // Note: we may have been rescheduled during HOOK_THREAD_START
+   // (Happens if core was occupied during our createThread() but became free since then)
+   CLOG("system thread", "Start %d", thread_id);
+
+   Core *core = thread->getCore();
+   LOG_ASSERT_ERROR(core && core->getId() == thread_id, "System thread should have strict mapping with cores.");
+
+   PerformanceModel *pm = core->getPerformanceModel();
+   // If the core already has a later time, we have to wait
+   time = std::max(time, pm->getElapsedTime());
+   pm->queuePseudoInstruction(new SpawnInstruction(time));
+
+   LOG_PRINT("Stalling just started system thread", thread_id);
+   stallThread_async(thread_id, ThreadManager::STALL_VCPU_HALT, time);
+}
+
+void SystemThreadManager::onThreadExit(thread_id_t thread_id)
+{
+   ScopedLock sl(m_thread_lock);
+
+   LOG_ASSERT_ERROR((UInt32)thread_id < m_thread_state.size(), "Thread id out of range: %d", thread_id);
+
+   Thread *thread = getThreadFromID(thread_id);
+   Core *core = thread->getCore();
+   LOG_ASSERT_ERROR(core != NULL, "Thread ended while not running on a core?");
+   LOG_ASSERT_ERROR(core->getId() == thread_id, "System thread moved.");
+
+   assert(m_thread_state[thread_id].status == Core::RUNNING);
+   m_thread_state[thread_id].status = Core::IDLE;
+
+   // Set the CoreState to 'IDLE'
+   core->setState(Core::IDLE);
+
+   m_thread_tls->set(NULL);
+   thread->setCore(NULL);
+   thread->updateCoreTLS();
+
+   Sim()->getStatsManager()->logEvent(StatsManager::EVENT_THREAD_EXIT, SubsecondTime::MaxTime(), core->getId(), thread_id, 0, 0, "");
+
+   SubsecondTime time = core->getPerformanceModel()->getElapsedTime();
+   HooksManager::ThreadTime args = { thread_id: thread_id, time: time };
+   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_EXIT, (UInt64)&args);
+   CLOG("system thread", "Exit %d", thread_id);
+}
+
+void SystemThreadManager::moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time)
+{
+   Thread *thread = getThreadFromID(thread_id);
+   CLOG("thread", "Move %d from %d to %d", thread_id, thread->getCore() ? thread->getCore()->getId() : -1, core_id);
+
+   if (Core *core = thread->getCore())
+      core->setState(Core::IDLE);
+
+   if (core_id == INVALID_CORE_ID)
+   {
+      thread->setCore(NULL);
+   }
+   else
+   {
+      LOG_ASSERT_ERROR(core_id == thread_id, "System thread cannot be moved to a different core.");
+      // Unless thread was stalled for sync/futex/..., wake it up
+      if (
+         m_thread_state[thread_id].status == Core::STALLED
+         && m_thread_state[thread_id].stalled_reason == STALL_UNSCHEDULED
+      )
+         resumeThread(thread_id, INVALID_THREAD_ID, time);
+
+      Core *core = Sim()->getCoreManager()->getCoreFromID(core_id);
+      thread->setCore(core);
+      if (getThreadState(thread_id) != Core::STALLED)
+         core->setState(Core::RUNNING);
+   }
+
+   HooksManager::ThreadMigrate args = { thread_id: thread_id, core_id: core_id, time: time };
+   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_MIGRATE, (UInt64)&args);
+}
+
+thread_id_t SystemThreadManager::spawnThread(thread_id_t thread_id, app_id_t app_id)
+{
+    SYSTEM_SIM_NOT_REACHABLE;
+}
+
+thread_id_t SystemThreadManager::getThreadToSpawn(SubsecondTime &time)
+{
+   SYSTEM_SIM_NOT_REACHABLE;
+}
+
+void SystemThreadManager::joinThread(thread_id_t thread_id, thread_id_t join_thread_id)
+{
+   SYSTEM_SIM_NOT_REACHABLE;
+}
+
+

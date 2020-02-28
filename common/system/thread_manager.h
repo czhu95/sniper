@@ -30,6 +30,7 @@ public:
       STALL_PAUSE,            // pause system call
       STALL_SLEEP,            // sleep system call
       STALL_SYSCALL,          // blocking system call
+      STALL_VCPU_HALT,        // system vcpu is being halted
       STALL_TYPES_MAX,
    };
    static const char* stall_type_names[];
@@ -40,7 +41,7 @@ public:
    Lock &getLock() { return m_thread_lock; }
    Scheduler *getScheduler() const { return m_scheduler; }
 
-   Thread* createThread(app_id_t app_id, thread_id_t creator_thread_id);
+   virtual Thread* createThread(app_id_t app_id, thread_id_t creator_thread_id) = 0;
 
    Thread *getThreadFromID(thread_id_t thread_id);
    Thread *getCurrentThread(int threadIndex = -1);
@@ -51,15 +52,15 @@ public:
    Thread *findThreadByTid(pid_t tid);
 
    // services
-   thread_id_t spawnThread(thread_id_t thread_id, app_id_t app_id);
-   void joinThread(thread_id_t thread_id, thread_id_t join_thread_id);
+   virtual thread_id_t spawnThread(thread_id_t thread_id, app_id_t app_id) = 0;
+   virtual void joinThread(thread_id_t thread_id, thread_id_t join_thread_id) = 0;
 
-   thread_id_t getThreadToSpawn(SubsecondTime &time);
+   virtual thread_id_t getThreadToSpawn(SubsecondTime &time) = 0;
    void waitForThreadStart(thread_id_t thread_id, thread_id_t wait_thread_id);
 
    // events
-   void onThreadStart(thread_id_t thread_id, SubsecondTime time);
-   void onThreadExit(thread_id_t thread_id);
+   virtual void onThreadStart(thread_id_t thread_id, SubsecondTime time) = 0;
+   virtual void onThreadExit(thread_id_t thread_id) = 0;
 
    // misc
    SubsecondTime stallThread(thread_id_t thread_id, stall_type_t reason, SubsecondTime time);
@@ -70,11 +71,11 @@ public:
    bool isThreadInitializing(thread_id_t thread_id);
    bool anyThreadRunning();
 
-   void moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time);
+   virtual void moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time) = 0;
 
    bool areAllCoresRunning();
 
-private:
+protected:
    struct ThreadSpawnRequest
    {
       thread_id_t thread_by;
@@ -94,7 +95,6 @@ private:
    Lock m_thread_lock;
 
    std::vector<ThreadState> m_thread_state;
-   std::queue<ThreadSpawnRequest> m_thread_spawn_list;
 
    std::vector<Thread*> m_threads;
    TLS *m_thread_tls;
@@ -103,6 +103,41 @@ private:
 
    Thread* createThread_unlocked(app_id_t app_id, thread_id_t creator_thread_id);
    void wakeUpWaiter(thread_id_t thread_id, SubsecondTime time);
+};
+
+class UserThreadManager: public ThreadManager
+{
+public:
+   Thread* createThread(app_id_t app_id, thread_id_t creator_thread_id) override;
+
+   thread_id_t spawnThread(thread_id_t thread_id, app_id_t app_id) override;
+   void joinThread(thread_id_t thread_id, thread_id_t join_thread_id) override;
+
+   thread_id_t getThreadToSpawn(SubsecondTime &time) override;
+
+   void onThreadStart(thread_id_t thread_id, SubsecondTime time) override;
+   void onThreadExit(thread_id_t thread_id) override;
+
+   void moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time) override;
+
+protected:
+   std::queue<ThreadSpawnRequest> m_thread_spawn_list;
+};
+
+class SystemThreadManager: public ThreadManager
+{
+public:
+   Thread* createThread(app_id_t app_id, thread_id_t creator_thread_id) override;
+
+   thread_id_t spawnThread(thread_id_t thread_id, app_id_t app_id) override;
+   void joinThread(thread_id_t thread_id, thread_id_t join_thread_id) override;
+
+   thread_id_t getThreadToSpawn(SubsecondTime &time) override;
+
+   void onThreadStart(thread_id_t thread_id, SubsecondTime time) override;
+   void onThreadExit(thread_id_t thread_id) override;
+
+   void moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time) override;
 };
 
 #endif // THREAD_MANAGER_H

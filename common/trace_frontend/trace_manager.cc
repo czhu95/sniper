@@ -407,14 +407,13 @@ SystemTraceManager::~SystemTraceManager()
 
 void SystemTraceManager::init()
 {
-   /* TODO: fix issues about app_id */
    for (UInt32 threadid = 0; threadid < m_num_threads; threadid ++)
    {
       String tracefile = m_tracefiles[threadid];
       String responsefile = m_responsefiles[threadid];
       m_num_threads_running++;
-      Thread *thread = Sim()->getThreadManager()->createThread(0, INVALID_THREAD_ID);
-      TraceThread *tthread = new TraceThread(thread, SubsecondTime::Zero(), tracefile, responsefile, 0, false);
+      Thread *thread = Sim()->getThreadManager()->createThread(INVALID_APP_ID, INVALID_THREAD_ID);
+      TraceThread *tthread = new TraceThread(thread, SubsecondTime::Zero(), tracefile, responsefile, INVALID_APP_ID, false);
       m_threads.push_back(tthread);
    }
 }
