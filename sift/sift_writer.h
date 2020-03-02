@@ -15,6 +15,13 @@ namespace Sift
 {
    class Writer
    {
+      public:
+      enum TranslationType
+      {
+         NO_TRANS,
+         PAGEMAP,
+         EXPLICIT
+      };
       typedef void (*GetCodeFunc)(uint8_t *dst, const uint8_t *src, uint32_t size);
       typedef void (*GetCodeFunc2)(uint8_t *dst, const uint8_t *src, uint32_t size, void *data);
       typedef bool (*HandleAccessMemoryFunc)(void *arg, MemoryLockType lock_signal, MemoryOpType mem_op, uint64_t d_addr, uint8_t *data_buffer, uint32_t data_size);
@@ -32,11 +39,11 @@ namespace Sift
          uint64_t last_address;
          std::unordered_map<uint64_t, bool> icache;
          int fd_va;
-         std::unordered_map<intptr_t, bool> m_va2pa;
+         std::unordered_map<uint64_t, uint64_t> m_va2pa;
          char *m_response_filename;
          uint32_t m_id;
          bool m_requires_icache_per_insn;
-         bool m_send_va2pa_mapping;
+         TranslationType m_send_va2pa_mapping;
 
          void initResponse();
          void handleMemoryRequest(Record &respRec);
@@ -44,7 +51,11 @@ namespace Sift
          uint64_t va2pa_lookup(uint64_t va);
 
       public:
-         Writer(const char *filename, GetCodeFunc getCodeFunc, bool useCompression = false, const char *response_filename = "", uint32_t id = 0, bool arch32 = false, bool requires_icache_per_insn = false, bool send_va2pa_mapping = false, GetCodeFunc2 getCodeFunc2 = NULL, void *GetCodeFunc2Data = NULL);
+         Writer(const char *filename, GetCodeFunc getCodeFunc, bool useCompression = false, const char *response_filename = "", uint32_t id = 0, bool arch32 = false, bool requires_icache_per_insn = false, TranslationType send_va2pa_mapping = NO_TRANS, GetCodeFunc2 getCodeFunc2 = NULL, void *GetCodeFunc2Data = NULL);
+         Writer(const char *filename, GetCodeFunc getCodeFunc, bool useCompression = false, const char *response_filename = "", uint32_t id = 0, bool arch32 = false, bool requires_icache_per_insn = false, bool send_va2pa_mapping = false, GetCodeFunc2 getCodeFunc2 = NULL, void *GetCodeFunc2Data = NULL)
+            : Writer(filename, getCodeFunc, useCompression, response_filename, id, arch32, requires_icache_per_insn,
+                     send_va2pa_mapping ? PAGEMAP : EXPLICIT, getCodeFunc2, GetCodeFunc2Data) {}
+
          ~Writer();
          void End();
          void Instruction(uint64_t addr, uint8_t size, uint8_t num_addresses, uint64_t addresses[], bool is_branch, bool taken, bool is_predicate, bool executed);
@@ -62,6 +73,7 @@ namespace Sift
          void RoutineAnnounce(uint64_t eip, const char *name, const char *imgname, uint64_t offset, uint32_t line, uint32_t column, const char *filename);
          void ISAChange(uint32_t new_isa);
          bool IsOpen();
+         void Translate(uint64_t va, uint64_t pa);
          void VCPUIdle();
          void VCPUResume();
 

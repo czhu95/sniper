@@ -36,11 +36,13 @@ __sift_assert_fail(__const char *__assertion, __const char *__file,
 }
 
 
-Sift::Writer::Writer(const char *filename, GetCodeFunc getCodeFunc, bool useCompression, const char *response_filename, uint32_t id, bool arch32, bool requires_icache_per_insn, bool send_va2pa_mapping, GetCodeFunc2 getCodeFunc2, void* getCodeFunc2Data)
+Sift::Writer::Writer(const char *filename, GetCodeFunc getCodeFunc, bool useCompression, const char *response_filename, uint32_t id, bool arch32, bool requires_icache_per_insn, TranslationType send_va2pa_mapping, GetCodeFunc2 getCodeFunc2, void* getCodeFunc2Data)
    : response(NULL)
    , getCodeFunc(getCodeFunc)
    , getCodeFunc2(getCodeFunc2)
    , getCodeFunc2Data(getCodeFunc2Data)
+   , handleAccessMemoryFunc(NULL)
+   , handleAccessMemoryArg(NULL)
    , ninstrs(0)
    , nbranch(0)
    , npredicate(0)
@@ -72,7 +74,7 @@ Sift::Writer::Writer(const char *filename, GetCodeFunc getCodeFunc, bool useComp
       options |= ArchIA32;
    if (requires_icache_per_insn)
       options |= IcacheVariable;
-   if (m_send_va2pa_mapping)
+   if (m_send_va2pa_mapping != NO_TRANS)
       options |= PhysicalAddress;
 
    output = new vofstream(filename, std::ios::out | std::ios::binary | std::ios::trunc);
@@ -1054,7 +1056,7 @@ void Sift::Writer::send_va2pa(uint64_t va)
       return;
    }
 
-   if (m_send_va2pa_mapping)
+   if (m_send_va2pa_mapping == PAGEMAP)
    {
       uint64_t vp = static_cast<uintptr_t>(va) / PAGE_SIZE_SIFT;
       if (m_va2pa.count(vp) == 0)
@@ -1074,9 +1076,35 @@ void Sift::Writer::send_va2pa(uint64_t va)
             output->write(reinterpret_cast<char*>(&vp), sizeof(uint64_t));
             output->write(reinterpret_cast<char*>(&pp), sizeof(uint64_t));
 
-            m_va2pa[vp] = true;
+            m_va2pa[vp] = 1;
          }
       }
+   }
+}
+
+// System method of va2pa mapping where pa is specified for va.
+void Sift::Writer::Translate(uint64_t va, uint64_t pa)
+{
+   if (!output)
+   {
+      return;
+   }
+
+   assert(m_send_va2pa_mapping == EXPLICIT);
+   uint64_t vp = static_cast<uintptr_t>(va) / PAGE_SIZE_SIFT;
+   uint64_t pp = static_cast<uintptr_t>(pa) / PAGE_SIZE_SIFT;
+
+   /* Page table can change for each vcpu. Update it in that case. */
+   if (m_va2pa.count(vp) == 0 || m_va2pa[vp] != pp)
+   {
+      Record rec;
+      rec.Other.zero = 0;
+      rec.Other.type = RecOtherLogical2Physical;
+      rec.Other.size = 2 * sizeof(uint64_t);
+      output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+      output->write(reinterpret_cast<char*>(&vp), sizeof(uint64_t));
+      output->write(reinterpret_cast<char*>(&pp), sizeof(uint64_t));
+      m_va2pa[vp] = pp;
    }
 }
 
