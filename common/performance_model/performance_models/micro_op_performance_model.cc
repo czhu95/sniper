@@ -338,7 +338,9 @@ void MicroOpPerformanceModel::handleInstruction(DynamicInstruction *dynins)
 
    SubsecondTime insn_cost = SubsecondTime::Zero();
 
-   if (dynins->instruction->getType() == INST_BRANCH)
+   if (dynins->instruction->getType() == INST_BRANCH &&
+   // Qemu frontend cannot distinguish cond branch and jump/call/etc., rely on micro op
+       m_current_uops[exec_base_index]->getMicroOp()->isBranch())
    {
       bool is_mispredict;
       dynins->getBranchCost(getCore(), &is_mispredict);

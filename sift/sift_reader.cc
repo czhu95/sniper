@@ -45,6 +45,8 @@ Sift::Reader::Reader(const char *filename, const char *response_filename, uint32
    , handleVCPUIdleFunc(NULL)
    , handleVCPUResumeFunc(NULL)
    , handleVCPUArg(NULL)
+   , handleICacheFlushFunc(NULL)
+   , handleICacheFlushArg(NULL)
    , filesize(0)
    , last_address(0)
    , icache()
@@ -230,6 +232,7 @@ bool Sift::Reader::Read(Instruction &inst)
                input->read(reinterpret_cast<char*>(&address), sizeof(uint64_t));
                input->read(reinterpret_cast<char*>(bytes), ICACHE_SIZE);
                icache[address] = bytes;
+               // std::cerr << "Rec icache base_addr = 0x" << std::hex << address << std::dec << std::endl;
                break;
             }
             case RecOtherIcacheVariable:
@@ -259,6 +262,26 @@ bool Sift::Reader::Read(Instruction &inst)
                   size_left -= read_amount;
                   address = base_addr + ICACHE_SIZE;
                }
+               break;
+            }
+            case RecOtherIcacheFlush:
+            {
+               assert(rec.Other.size == 0);
+               // std::cerr << "Rec ICacheFlush." << std::endl;
+               for (const auto &e: icache)
+               {
+                  delete[] e.second;
+               }
+
+               for (const auto &e: scache)
+               {
+                  delete e.second;
+               }
+
+               icache.clear();
+               scache.clear();
+               m_last_sinst = NULL;
+               handleICacheFlushFunc(handleICacheFlushArg);
                break;
             }
             case RecOtherLogical2Physical:

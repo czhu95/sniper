@@ -58,6 +58,7 @@ namespace Sift
       typedef int32_t (*HandleForkFunc)(void* arg);
       typedef void (*HandleVCPUIdleFunc)(void *arg);
       typedef void (*HandleVCPUResumeFunc)(void *arg);
+      typedef void (*HandleICacheFlushFunc)(void *arg);
 
       private:
          vistream *input;
@@ -86,6 +87,8 @@ namespace Sift
          HandleVCPUIdleFunc handleVCPUIdleFunc;
          HandleVCPUResumeFunc handleVCPUResumeFunc;
          void *handleVCPUArg;
+         HandleICacheFlushFunc handleICacheFlushFunc;
+         void *handleICacheFlushArg;
          uint64_t filesize;
          std::ifstream *inputstream;
 
@@ -133,6 +136,7 @@ namespace Sift
          void setHandleRoutineFunc(HandleRoutineChange funcChange, HandleRoutineAnnounce funcAnnounce, void* arg = NULL) { assert(funcChange); assert(funcAnnounce); handleRoutineChangeFunc = funcChange; handleRoutineAnnounceFunc = funcAnnounce; handleRoutineArg = arg; }
          void setHandleForkFunc(HandleForkFunc func, void* arg = NULL) { assert(func); handleForkFunc = func; handleForkArg = arg;}
          void setHandleVCPUFunc(HandleVCPUIdleFunc funcIdle, HandleVCPUResumeFunc funcResume, void *arg = NULL) { assert(funcIdle); assert(funcResume); handleVCPUIdleFunc = funcIdle; handleVCPUResumeFunc = funcResume; handleVCPUArg = arg; }
+         void setHandleICacheFlushFunc(HandleICacheFlushFunc func, void *arg = NULL) { handleICacheFlushFunc = func; handleICacheFlushArg = arg; }
 
          uint64_t getPosition();
          uint64_t getLength();

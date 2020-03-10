@@ -51,6 +51,7 @@ Sift::Writer::Writer(const char *filename, GetCodeFunc getCodeFunc, bool useComp
    , last_address(0)
    , icache()
    , fd_va(-1)
+   , inst_began(false)
    , m_va2pa()
    , m_id(id)
    , m_requires_icache_per_insn(requires_icache_per_insn)
@@ -58,6 +59,7 @@ Sift::Writer::Writer(const char *filename, GetCodeFunc getCodeFunc, bool useComp
 {
    memset(hsize, 0, sizeof(hsize));
    memset(haddr, 0, sizeof(haddr));
+   memset(&m_rec, 0, sizeof(m_rec));
 
    m_response_filename = strdup(response_filename);
 
@@ -171,6 +173,40 @@ Sift::Writer::~Writer()
    printf(" branch %u predicate %u\n", nbranch, npredicate);
    printf("instrsmall %u ext %u\n", ninstrsmall, ninstrext);
    #endif
+}
+
+void Sift::Writer::SendICache(uint64_t addr, uint8_t *code)
+{
+   uint64_t base_addr = addr & ICACHE_PAGE_MASK;
+   uint8_t *base_code = code - (addr - base_addr);
+   if (! icache[base_addr])
+   {
+      // std::cerr << "[DEBUG:" << m_id << "] Write icache base_addr=0x" << std::hex << base_addr << std::dec << std::endl;
+      #if VERBOSE > 2
+      std::cerr << "[DEBUG:" << m_id << "] Write icache" << std::endl;
+      #endif
+      Record rec;
+      rec.Other.zero = 0;
+      rec.Other.type = RecOtherIcache;
+      rec.Other.size = sizeof(uint64_t) + ICACHE_SIZE;
+      output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+      output->write(reinterpret_cast<char*>(&base_addr), sizeof(uint64_t));
+
+      output->write(reinterpret_cast<char*>(base_code), ICACHE_SIZE);
+
+      icache[base_addr] = true;
+   }
+}
+
+void Sift::Writer::FlushICache()
+{
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherIcacheFlush;
+   rec.Other.size = 0;
+   output->write(reinterpret_cast<char *>(&rec), sizeof(rec.Other));
+   // std::cerr << "[DEBUG:" << m_id << "] Flush icache" << std::endl;
+   icache.clear();
 }
 
 void Sift::Writer::Instruction(uint64_t addr, uint8_t size, uint8_t num_addresses, uint64_t addresses[], bool is_branch, bool taken, bool is_predicate, bool executed)
@@ -311,6 +347,148 @@ void Sift::Writer::Instruction(uint64_t addr, uint8_t size, uint8_t num_addresse
    if (is_predicate)
       npredicate++;
 }
+
+void Sift::Writer::InstructionBegin(uint64_t addr, uint8_t size, bool is_predicate, bool executed)
+{
+   sift_assert(!inst_began);
+
+   if (!output)
+   {
+      return;
+   }
+
+   inst_began = true;
+
+   if (addr == last_address && !is_predicate)
+   {
+      #if VERBOSE > 2
+      std::cerr << "[DEBUG:" << m_id << "] Write Simple Instruction" << std::endl;
+      #endif
+
+      memset(&m_rec, 0, sizeof(m_rec));
+      m_rec.Instruction.size = size;
+      m_rec.Instruction.is_branch = false;
+   }
+   // Send as full instruction
+   else
+   {
+      #if VERBOSE > 2
+      std::cerr << "[DEBUG:" << m_id << "] Write Simple Full Instruction" << std::endl;
+      #endif
+
+      memset(&m_rec, 0, sizeof(m_rec));
+      m_rec.InstructionExt.type = 0;
+      m_rec.InstructionExt.size = size;
+      m_rec.InstructionExt.is_branch = false;
+      m_rec.InstructionExt.is_predicate = is_predicate;
+      m_rec.InstructionExt.executed = executed;
+      m_rec.InstructionExt.addr = addr;
+   }
+
+   if (is_predicate)
+      npredicate++;
+}
+
+void Sift::Writer::InstructionMem(uint64_t addr)
+{
+   if (!output || !inst_began)
+   {
+      return;
+   }
+
+   if (m_addresses.size() == MAX_DYNAMIC_ADDRESSES)
+   {
+      m_addresses.clear();
+      inst_began = false;
+      return;
+   }
+
+   m_addresses.push_back(addr);
+   if (m_rec.Instruction.size != 0)
+   {
+      assert(m_rec.Instruction.num_addresses < MAX_DYNAMIC_ADDRESSES);
+      m_rec.Instruction.num_addresses ++;
+   }
+   else
+   {
+      assert(m_rec.InstructionExt.num_addresses < MAX_DYNAMIC_ADDRESSES);
+      m_rec.InstructionExt.num_addresses ++;
+   }
+}
+
+void Sift::Writer::InstructionBranch(bool taken)
+{
+   if (!output || !inst_began)
+   {
+      return;
+   }
+
+   if (m_rec.Instruction.size != 0)
+   {
+      m_rec.Instruction.is_branch = true;
+      m_rec.Instruction.taken = taken;
+   }
+   else
+   {
+      m_rec.InstructionExt.is_branch = true;
+      m_rec.InstructionExt.taken = taken;
+   }
+   nbranch++;
+}
+
+void Sift::Writer::InstructionEnd()
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write Instruction" << std::endl;
+   #endif
+
+   if (!output || !inst_began)
+   {
+      return;
+   }
+
+   uint64_t size, num_addresses;
+   if (m_rec.Instruction.size != 0)
+   {
+      size = m_rec.Instruction.size;
+      num_addresses = m_rec.Instruction.num_addresses;
+      output->write(reinterpret_cast<char*>(&m_rec), sizeof(m_rec.Instruction));
+
+      #if VERBOSE_HEX > 2
+      hexdump((char*)&m_rec, sizeof(m_rec.Instruction));
+      #endif
+
+      ninstrsmall++;
+   }
+   else
+   {
+      size = m_rec.InstructionExt.size;
+      num_addresses = m_rec.InstructionExt.num_addresses;
+      output->write(reinterpret_cast<char*>(&m_rec), sizeof(m_rec.InstructionExt));
+
+      #if VERBOSE_HEX > 2
+      hexdump((char*)&m_rec, sizeof(m_rec.InstructionExt));
+      #endif
+
+      last_address = m_rec.InstructionExt.addr;
+      ninstrext++;
+   }
+
+   assert(num_addresses == m_addresses.size());
+
+   for(size_t i = 0; i < num_addresses; ++i)
+      output->write(reinterpret_cast<char*>(&m_addresses[i]), sizeof(uint64_t));
+
+   m_addresses.clear();
+
+   last_address += size;
+   ninstrs++;
+   hsize[size]++;
+   haddr[num_addresses]++;
+
+   inst_began = false;
+}
+
 
 Sift::Mode Sift::Writer::InstructionCount(uint32_t icount)
 {
@@ -1080,6 +1258,13 @@ void Sift::Writer::send_va2pa(uint64_t va)
          }
       }
    }
+#ifdef DEBUG
+   else if (m_send_va2pa_mapping == EXPLICIT)
+   {
+      assert(m_va2pa.count(static_cast<uintptr_t>(va) / PAGE_SIZE_SIFT));
+   }
+#endif
+
 }
 
 // System method of va2pa mapping where pa is specified for va.

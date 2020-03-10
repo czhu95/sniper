@@ -54,6 +54,7 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    , m_blocked(false)
    , m_cleanup(cleanup)
    , m_started(false)
+   , m_flushed(false)
    , m_stopped(false)
 {
 
@@ -78,8 +79,11 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    m_trace.setHandleForkFunc(TraceThread::__handleForkFunc, this);
    if (Sim()->getRoutineTracer())
       m_trace.setHandleRoutineFunc(TraceThread::__handleRoutineChangeFunc, TraceThread::__handleRoutineAnnounceFunc, this);
-   if (Sim()->getCfg()->getString("general/sim_mode") == "system")
+   if (Sim()->getSimMode() == Simulator::SYSTEM)
+   {
       m_trace.setHandleVCPUFunc(TraceThread::__handleVCPUIdleFunc, TraceThread::__handleVCPUResumeFunc, this);
+      m_trace.setHandleICacheFlushFunc(TraceThread::__handleICacheFlushFunc, this);
+   }
 
    if (m_address_randomization)
    {
@@ -683,6 +687,22 @@ void TraceThread::handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruc
    }
 }
 
+void TraceThread::handleICacheFlushFunc()
+{
+   for (const auto& e: m_decoder_cache)
+   {
+      delete e.second;
+   }
+   for (const auto& e: m_icache)
+   {
+      delete e.second;
+   }
+
+   m_decoder_cache.clear();
+   m_icache.clear();
+   m_flushed = true;
+}
+
 void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instruction &next_inst, PerformanceModel *prfmdl)
 {
 
@@ -707,6 +727,14 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
    if (!dec_inst.is_nop())
    {
       const bool is_prefetch = dec_inst.is_prefetch();
+
+      if (Sim()->getDecoder()->num_memory_operands(&dec_inst) > 0 &&
+          inst.num_addresses == 0)
+      {
+          inst.num_addresses = Sim()->getDecoder()->num_memory_operands(&dec_inst);
+          inst.is_predicate = true;
+          inst.executed = false;
+      }
 
       for(uint32_t mem_idx = 0; mem_idx < Sim()->getDecoder()->num_memory_operands(&dec_inst); ++mem_idx)
       {
@@ -871,38 +899,45 @@ void TraceThread::run()
       // Force BBV end on non-taken branches
       m_bbv_end = inst.is_branch;
 
-
-      switch(Sim()->getInstrumentationMode())
+      if (!m_flushed)
       {
-         case InstMode::FAST_FORWARD:
+         switch(Sim()->getInstrumentationMode())
+         {
+            case InstMode::FAST_FORWARD:
+               break;
+
+            case InstMode::CACHE_ONLY:
+               handleInstructionWarmup(inst, next_inst, core, do_icache_warmup, icache_warmup_addr, icache_warmup_size);
+               break;
+
+            case InstMode::DETAILED:
+               handleInstructionDetailed(inst, next_inst, prfmdl);
+               break;
+
+            default:
+               LOG_PRINT_ERROR("Unknown instrumentation mode");
+         }
+
+
+         // We may have been rescheduled to a different core
+         // by prfmdl->iterate (in handleInstructionDetailed),
+         // or core->countInstructions (when using a fast-forward performance model)
+         SubsecondTime time = prfmdl->getElapsedTime();
+         if (m_thread->reschedule(time, core))
+         {
+            core = m_thread->getCore();
+            prfmdl = core->getPerformanceModel();
+         }
+
+
+         if (m_stop)
             break;
 
-         case InstMode::CACHE_ONLY:
-            handleInstructionWarmup(inst, next_inst, core, do_icache_warmup, icache_warmup_addr, icache_warmup_size);
-            break;
-
-         case InstMode::DETAILED:
-            handleInstructionDetailed(inst, next_inst, prfmdl);
-            break;
-
-         default:
-            LOG_PRINT_ERROR("Unknown instrumentation mode");
       }
-
-
-      // We may have been rescheduled to a different core
-      // by prfmdl->iterate (in handleInstructionDetailed),
-      // or core->countInstructions (when using a fast-forward performance model)
-      SubsecondTime time = prfmdl->getElapsedTime();
-      if (m_thread->reschedule(time, core))
+      else
       {
-         core = m_thread->getCore();
-         prfmdl = core->getPerformanceModel();
+         m_flushed = false;
       }
-
-
-      if (m_stop)
-         break;
 
       inst = next_inst;
    }

@@ -102,6 +102,7 @@ namespace Sift
       RecOtherJoinResponse,
       RecOtherEndResponse,
       RecOtherIcacheVariable,
+      RecOtherIcacheFlush,
       RecOtherSync,
       RecOtherSyncResponse,
       RecOtherLogical2Physical,

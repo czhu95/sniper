@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <fstream>
 #include <assert.h>
+#include <vector>
 
 class vistream;
 class vostream;
@@ -36,14 +37,17 @@ namespace Sift
          void *handleAccessMemoryArg;
          uint64_t ninstrs, hsize[16], haddr[MAX_DYNAMIC_ADDRESSES+1], nbranch, npredicate, ninstrsmall, ninstrext;
 
+         std::vector<uint64_t> m_addresses;
          uint64_t last_address;
          std::unordered_map<uint64_t, bool> icache;
          int fd_va;
+         bool inst_began;
          std::unordered_map<uint64_t, uint64_t> m_va2pa;
          char *m_response_filename;
          uint32_t m_id;
          bool m_requires_icache_per_insn;
          TranslationType m_send_va2pa_mapping;
+         Record m_rec;
 
          void initResponse();
          void handleMemoryRequest(Record &respRec);
@@ -58,7 +62,13 @@ namespace Sift
 
          ~Writer();
          void End();
+         void FlushICache();
+         void SendICache(uint64_t addr, uint8_t *code);
          void Instruction(uint64_t addr, uint8_t size, uint8_t num_addresses, uint64_t addresses[], bool is_branch, bool taken, bool is_predicate, bool executed);
+         void InstructionBegin(uint64_t addr, uint8_t size, bool is_predicate, bool executed);
+         void InstructionMem(uint64_t addr);
+         void InstructionBranch(bool taken);
+         void InstructionEnd();
          Mode InstructionCount(uint32_t icount);
          void CacheOnly(uint8_t icount, CacheOnlyType type, uint64_t eip, uint64_t address);
          void Output(uint8_t fd, const char *data, uint32_t size);
