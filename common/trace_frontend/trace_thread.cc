@@ -909,45 +909,37 @@ void TraceThread::run()
       // Force BBV end on non-taken branches
       m_bbv_end = inst.is_branch;
 
-      if (!m_flushed)
+      switch(Sim()->getInstrumentationMode())
       {
-         switch(Sim()->getInstrumentationMode())
-         {
-            case InstMode::FAST_FORWARD:
-               break;
-
-            case InstMode::CACHE_ONLY:
-               handleInstructionWarmup(inst, next_inst, core, do_icache_warmup, icache_warmup_addr, icache_warmup_size);
-               break;
-
-            case InstMode::DETAILED:
-               handleInstructionDetailed(inst, next_inst, prfmdl);
-               break;
-
-            default:
-               LOG_PRINT_ERROR("Unknown instrumentation mode");
-         }
-
-
-         // We may have been rescheduled to a different core
-         // by prfmdl->iterate (in handleInstructionDetailed),
-         // or core->countInstructions (when using a fast-forward performance model)
-         SubsecondTime time = prfmdl->getElapsedTime();
-         if (m_thread->reschedule(time, core))
-         {
-            core = m_thread->getCore();
-            prfmdl = core->getPerformanceModel();
-         }
-
-
-         if (m_stop)
+         case InstMode::FAST_FORWARD:
             break;
 
+         case InstMode::CACHE_ONLY:
+            handleInstructionWarmup(inst, next_inst, core, do_icache_warmup, icache_warmup_addr, icache_warmup_size);
+            break;
+
+         case InstMode::DETAILED:
+            handleInstructionDetailed(inst, next_inst, prfmdl);
+            break;
+
+         default:
+            LOG_PRINT_ERROR("Unknown instrumentation mode");
       }
-      else
+
+
+      // We may have been rescheduled to a different core
+      // by prfmdl->iterate (in handleInstructionDetailed),
+      // or core->countInstructions (when using a fast-forward performance model)
+      SubsecondTime time = prfmdl->getElapsedTime();
+      if (m_thread->reschedule(time, core))
       {
-         m_flushed = false;
+         core = m_thread->getCore();
+         prfmdl = core->getPerformanceModel();
       }
+
+
+      if (m_stop)
+            break;
 
       inst = next_inst;
    }

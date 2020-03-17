@@ -78,7 +78,6 @@ class TraceThread : public Runnable
       bool m_blocked;
       bool m_cleanup;
       bool m_started;
-      bool m_flushed;
 
       void run();
       void signalStarted();
