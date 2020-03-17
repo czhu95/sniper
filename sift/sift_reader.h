@@ -58,7 +58,7 @@ namespace Sift
       typedef int32_t (*HandleForkFunc)(void* arg);
       typedef void (*HandleVCPUIdleFunc)(void *arg);
       typedef void (*HandleVCPUResumeFunc)(void *arg);
-      typedef void (*HandleICacheFlushFunc)(void *arg);
+      typedef void (*HandleICacheFlushFunc)(void *arg, uint64_t page_addr);
 
       private:
          vistream *input;

@@ -687,19 +687,29 @@ void TraceThread::handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruc
    }
 }
 
-void TraceThread::handleICacheFlushFunc()
+void TraceThread::handleICacheFlushFunc(uint64_t page)
 {
-   for (const auto& e: m_decoder_cache)
+   for (auto it = m_decoder_cache.begin(); it != m_decoder_cache.end(); )
    {
-      delete e.second;
-   }
-   for (const auto& e: m_icache)
-   {
-      delete e.second;
+      if ((it->first & Sift::ICACHE_PAGE_MASK) == page)
+      {
+         delete it->second;
+         it = m_decoder_cache.erase(it);
+      }
+      else
+         ++ it;
    }
 
-   m_decoder_cache.clear();
-   m_icache.clear();
+   for (auto it = m_icache.begin(); it != m_icache.end(); )
+   {
+      if ((it->first & Sift::ICACHE_PAGE_MASK) == page)
+      {
+         delete it->second;
+         it = m_icache.erase(it);
+      }
+      else
+         ++ it;
+   }
    m_flushed = true;
 }
 

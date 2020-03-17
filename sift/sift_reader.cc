@@ -231,6 +231,27 @@ bool Sift::Reader::Read(Instruction &inst)
                uint8_t *bytes = new uint8_t[ICACHE_SIZE];
                input->read(reinterpret_cast<char*>(&address), sizeof(uint64_t));
                input->read(reinterpret_cast<char*>(bytes), ICACHE_SIZE);
+#ifndef __PIN__
+               if (icache.count(address))
+               {
+                  for (auto &e: scache)
+                  {
+                     if (e.second->next && (e.second->next->addr & ICACHE_PAGE_MASK) == address)
+                        ((StaticInstruction *)e.second)->next = NULL;
+                  }
+                  for (auto it = scache.begin(); it != scache.end(); )
+                  {
+                     if ((it->first & ICACHE_PAGE_MASK) == address)
+                     {
+                        delete it->second;
+                        it = scache.erase(it);
+                     }
+                     else
+                        ++ it;
+                  }
+                  handleICacheFlushFunc(handleICacheFlushArg, address);
+               }
+#endif
                icache[address] = bytes;
                // std::cerr << "Rec icache base_addr = 0x" << std::hex << address << std::dec << std::endl;
                break;
@@ -266,22 +287,25 @@ bool Sift::Reader::Read(Instruction &inst)
             }
             case RecOtherIcacheFlush:
             {
-               assert(rec.Other.size == 0);
-               // std::cerr << "Rec ICacheFlush." << std::endl;
-               for (const auto &e: icache)
+               assert(rec.Other.size == sizeof(uint64_t));
+               uint64_t address;
+               input->read(reinterpret_cast<char*>(&address), sizeof(uint64_t));
+               assert(icache.count(address));
+               for (auto &e: scache)
                {
-                  delete[] e.second;
+                  if (e.second->next && (e.second->next->addr & ICACHE_PAGE_MASK) == address)
+                     ((StaticInstruction *)e.second)->next = NULL;
                }
-
-               for (const auto &e: scache)
+               for (auto it = scache.begin(); it != scache.end(); ++ it)
                {
-                  delete e.second;
+                  if ((it->first & ICACHE_PAGE_MASK) == address)
+                  {
+                     delete it->second;
+                     scache.erase(it);
+                     break;
+                  }
                }
-
-               icache.clear();
-               scache.clear();
-               m_last_sinst = NULL;
-               handleICacheFlushFunc(handleICacheFlushArg);
+               handleICacheFlushFunc(handleICacheFlushArg, address);
                break;
             }
             case RecOtherLogical2Physical:

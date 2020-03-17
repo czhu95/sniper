@@ -108,8 +108,8 @@ class TraceThread : public Runnable
       { return ((TraceThread*)arg)->handleVCPUIdleFunc(); }
       static void __handleVCPUResumeFunc(void *arg)
       { return ((TraceThread*)arg)->handleVCPUResumeFunc(); }
-      static void __handleICacheFlushFunc(void *arg)
-      { return ((TraceThread*)arg)->handleICacheFlushFunc();  }
+      static void __handleICacheFlushFunc(void *arg, uint64_t page)
+      { return ((TraceThread*)arg)->handleICacheFlushFunc(page);  }
 
       Sift::Mode handleInstructionCountFunc(uint32_t icount);
       void handleCacheOnlyFunc(uint8_t icount, Sift::CacheOnlyType type, uint64_t eip, uint64_t address);
@@ -124,7 +124,7 @@ class TraceThread : public Runnable
       void handleRoutineAnnounceFunc(uint64_t eip, const char *name, const char *imgname, uint64_t offset, uint32_t line, uint32_t column, const char *filename);
       void handleVCPUIdleFunc();
       void handleVCPUResumeFunc();
-      void handleICacheFlushFunc();
+      void handleICacheFlushFunc(uint64_t page);
 
       Instruction* decode(Sift::Instruction &inst);
       void handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruction &next_inst, Core *core, bool do_icache_warmup, UInt64 icache_warmup_addr, UInt64 icache_warmup_size);
