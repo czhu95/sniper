@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <iomanip>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -175,15 +176,16 @@ Sift::Writer::~Writer()
    #endif
 }
 
-void Sift::Writer::SendICache(uint64_t addr, uint8_t *code)
+void Sift::Writer::SendICache(uint64_t addr, uint8_t *code, uint64_t cr3)
 {
    uint64_t base_addr = addr & ICACHE_PAGE_MASK;
    uint8_t *base_code = code - (addr - base_addr);
-   if (! icache[base_addr])
+   if (icache.count(base_addr) == 0 || icache[base_addr] != cr3)
    {
-      // std::cerr << "[DEBUG:" << m_id << "] Write icache base_addr=0x" << std::hex << base_addr << std::dec << std::endl;
       #if VERBOSE > 2
-      std::cerr << "[DEBUG:" << m_id << "] Write icache" << std::endl;
+      std::cerr << "[DEBUG:" << m_id << "] Write icache base_addr=0x"
+                << std::hex << std::setfill('0') << std::setw(16) << base_addr
+                << ", cr3=0x" << cr3 << std::dec << std::endl;
       #endif
       Record rec;
       rec.Other.zero = 0;
@@ -194,19 +196,23 @@ void Sift::Writer::SendICache(uint64_t addr, uint8_t *code)
 
       output->write(reinterpret_cast<char*>(base_code), ICACHE_SIZE);
 
-      icache[base_addr] = true;
+      icache[base_addr] = cr3;
    }
 }
 
-void Sift::Writer::FlushICache()
+void Sift::Writer::FlushICache(uint64_t cr3)
 {
-   Record rec;
-   rec.Other.zero = 0;
-   rec.Other.type = RecOtherIcacheFlush;
-   rec.Other.size = 0;
-   output->write(reinterpret_cast<char *>(&rec), sizeof(rec.Other));
-   // std::cerr << "[DEBUG:" << m_id << "] Flush icache" << std::endl;
-   icache.clear();
+   for (auto &e : icache)
+   {
+      if (e.second == cr3)
+      {
+         e.second = (uint64_t)-1;
+         #if VERBOSE > 2
+         std::cerr << "[DEBUG:" << m_id << "] Flush icache at vaddr 0x" << std::hex << e.first
+                   << ", cr3=0x" << cr3 << std::dec << std::endl;
+         #endif
+      }
+   }
 }
 
 void Sift::Writer::Instruction(uint64_t addr, uint8_t size, uint8_t num_addresses, uint64_t addresses[], bool is_branch, bool taken, bool is_predicate, bool executed)
@@ -245,7 +251,7 @@ void Sift::Writer::Instruction(uint64_t addr, uint8_t size, uint8_t num_addresse
          hexdump((char*)buffer, sizeof(buffer));
          #endif
 
-         icache[addr] = true;
+         icache[addr] = 1;
       }
    }
    else
@@ -273,7 +279,7 @@ void Sift::Writer::Instruction(uint64_t addr, uint8_t size, uint8_t num_addresse
             }
             output->write(reinterpret_cast<char*>(buffer), ICACHE_SIZE);
 
-            icache[base_addr] = true;
+            icache[base_addr] = 1;
          }
       }
    }
@@ -1315,13 +1321,6 @@ void Sift::Writer::VCPUIdle()
 
    output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
    output->flush();
-
-   initResponse();
-
-   // wait for reply
-   Record respRec;
-   response->read(reinterpret_cast<char*>(&respRec), sizeof(rec.Other));
-   assert(respRec.Other.type == RecOtherVCPUIdleResponse);
 }
 
 void Sift::Writer::VCPUResume()
@@ -1346,11 +1345,4 @@ void Sift::Writer::VCPUResume()
 
    output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
    output->flush();
-
-   initResponse();
-
-   // wait for reply
-   Record respRec;
-   response->read(reinterpret_cast<char*>(&respRec), sizeof(rec.Other));
-   assert(respRec.Other.type == RecOtherVCPUResumeResponse);
 }

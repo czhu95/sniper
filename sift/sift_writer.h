@@ -39,7 +39,7 @@ namespace Sift
 
          std::vector<uint64_t> m_addresses;
          uint64_t last_address;
-         std::unordered_map<uint64_t, bool> icache;
+         std::unordered_map<uint64_t, uint64_t> icache;
          int fd_va;
          bool inst_began;
          std::unordered_map<uint64_t, uint64_t> m_va2pa;
@@ -62,8 +62,8 @@ namespace Sift
 
          ~Writer();
          void End();
-         void FlushICache();
-         void SendICache(uint64_t addr, uint8_t *code);
+         void FlushICache(uint64_t cr3);
+         void SendICache(uint64_t addr, uint8_t *code, uint64_t cr3);
          void Instruction(uint64_t addr, uint8_t size, uint8_t num_addresses, uint64_t addresses[], bool is_branch, bool taken, bool is_predicate, bool executed);
          void InstructionBegin(uint64_t addr, uint8_t size, bool is_predicate, bool executed);
          void InstructionMem(uint64_t addr);
