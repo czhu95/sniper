@@ -4,6 +4,7 @@
 #include "core.h"
 #include "performance_model.h"
 #include "branch_predictor.h"
+#include "micro_op.h"
 #include "config.hpp"
 
 // Instruction
@@ -23,6 +24,16 @@ Instruction::Instruction(InstructionType type)
    , m_uops(NULL)
    , m_addr(0)
 {
+}
+
+Instruction::~Instruction()
+{
+   if (m_uops)
+   {
+      for (const auto &uop: *m_uops)
+          delete uop;
+      delete m_uops;
+   }
 }
 
 InstructionType Instruction::getType() const
