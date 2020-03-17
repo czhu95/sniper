@@ -546,8 +546,6 @@ bool Sift::Reader::Read(Instruction &inst)
                std::cerr << "[DEBUG:" << m_id << "] Read VCPUIdle" << std::endl;
                #endif
                assert(rec.Other.size == 0);
-               // TODO: should we block recorder here? otherwise we should just remove response.
-               sendSimpleResponse(RecOtherVCPUIdleResponse);
                handleVCPUIdleFunc(handleVCPUArg);
                break;
             }
@@ -557,8 +555,6 @@ bool Sift::Reader::Read(Instruction &inst)
                std::cerr << "[DEBUG:" << m_id << "] Read VCPUResume" << std::endl;
                #endif
                assert(rec.Other.size == 0);
-               // TODO: should we block recorder here? otherwise we should just remove response.
-               sendSimpleResponse(RecOtherVCPUResumeResponse);
                handleVCPUResumeFunc(handleVCPUArg);
                break;
             }
