@@ -54,7 +54,6 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    , m_blocked(false)
    , m_cleanup(cleanup)
    , m_started(false)
-   , m_flushed(false)
    , m_stopped(false)
 {
 
@@ -710,7 +709,6 @@ void TraceThread::handleICacheFlushFunc(uint64_t page)
       else
          ++ it;
    }
-   m_flushed = true;
 }
 
 void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instruction &next_inst, PerformanceModel *prfmdl)
