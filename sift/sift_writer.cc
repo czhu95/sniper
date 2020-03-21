@@ -158,6 +158,22 @@ void Sift::Writer::End()
    }
 }
 
+void Sift::Writer::Abort()
+{
+   if (output)
+   {
+      output->flush();
+      delete output;
+      output = NULL;
+   }
+
+   if (response)
+   {
+      delete response;
+      response = NULL;
+   }
+}
+
 Sift::Writer::~Writer()
 {
    End();

@@ -62,6 +62,7 @@ namespace Sift
 
          ~Writer();
          void End();
+         void Abort();
          void FlushICache(uint64_t cr3);
          void SendICache(uint64_t addr, uint8_t *code, uint64_t cr3);
          void Instruction(uint64_t addr, uint8_t size, uint8_t num_addresses, uint64_t addresses[], bool is_branch, bool taken, bool is_predicate, bool executed);
