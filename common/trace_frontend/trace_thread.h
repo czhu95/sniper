@@ -133,14 +133,14 @@ class TraceThread : public Runnable
       void unblock();
 
       SubsecondTime getCurrentTime() const;
-      
+
       //static dl::Decoder *m_decoder;
       dl::DecoderFactory *m_factory;  // we need a factory here to be able to create instructions of any kind
       //const xed_decoded_inst_t* staticDecode(Sift::Instruction &inst);
       const dl::DecodedInst* staticDecode(Sift::Instruction &inst);
 
       long long *m_papi_counters;
-      
+
       Lock m_lock;
 
    public:

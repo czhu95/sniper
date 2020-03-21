@@ -451,10 +451,7 @@ void SystemTraceManager::signalDone(TraceThread *thread, SubsecondTime time, boo
    thread->m_stopped = true;
 
    TraceManager::signalDone(thread, time, aborted);
-   if (!aborted && m_num_threads_running == 0)
-   {
-      stop();
-   }
+   stop();
 }
 
 UInt64 SystemTraceManager::getProgressValue()

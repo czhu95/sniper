@@ -879,6 +879,9 @@ void TraceThread::run()
          unblock();
       }
 
+      if (m_stop)
+         break;
+
       core = m_thread->getCore();
       prfmdl = core->getPerformanceModel();
 
@@ -934,10 +937,6 @@ void TraceThread::run()
          core = m_thread->getCore();
          prfmdl = core->getPerformanceModel();
       }
-
-
-      if (m_stop)
-            break;
 
       inst = next_inst;
    }
