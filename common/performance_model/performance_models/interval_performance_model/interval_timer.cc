@@ -545,7 +545,13 @@ uint64_t IntervalTimer::dispatchInstruction(Windows::WindowEntry& micro_op, Stop
          // FIXME: Don't update micro_op.setExecTime (else it will eventually affect the critical path head, once this instruction
          // goes through Windows::dispatchInstruction). If we need this time, figure out another place to put it.
          //micro_op.setExecTime(exec_time_cycle);
+      } else if (micro_op.getMicroOp()->isPause()) {
+         uint64_t dispatch_cycle = m_windows->getCriticalPathTail();
+         uint64_t exec_time_cycle = dispatch_cycle + exec_latency;
+         micro_op.setExecTime(exec_time_cycle);
 
+         m_windows->clearOldWindow(exec_time_cycle);
+         latency += exec_latency;
       } else {
          uint64_t dispatch_cycle = std::max(max_producer_exec_time, m_windows->getCriticalPathHead());
          micro_op.setExecTime(dispatch_cycle + exec_latency);

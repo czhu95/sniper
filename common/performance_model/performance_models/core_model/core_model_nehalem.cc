@@ -125,6 +125,8 @@ CoreModelNehalem::CoreModelNehalem()
    instructionLatencies[XED_ICLASS_UCOMISS] = 3; // 1 + 2 eflags bypass
    instructionLatencies[XED_ICLASS_UCOMISD] = 3; // 1 + 2 eflags bypass
 
+   instructionLatencies[XED_ICLASS_PAUSE] = 100;
+
 
    /* bypass latencies */
    /* http://www.agner.org/optimize/microarchitecture.pdf page 86-87 */
