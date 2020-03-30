@@ -15,7 +15,7 @@ AddressHomeLookup::AddressHomeLookup(UInt32 ahl_param,
    //   block_num               |   block_offset                  //
    // /////////////////////////////////////////////////////////// //
 
-   LOG_ASSERT_ERROR((1 << m_ahl_param) >= (SInt32) m_cache_block_size,
+   LOG_ASSERT_ERROR((1UL << m_ahl_param) >= (UInt64) m_cache_block_size,
          "2^AHL param(%u) must be >= Cache Block Size(%u)",
          m_ahl_param, m_cache_block_size);
    m_total_modules = core_list.size();
