@@ -20,6 +20,7 @@ class DynamicMicroOpNehalem : public DynamicMicroOp
          UOP_PORT5,
          UOP_PORT05,
          UOP_PORT015,
+         UOP_PORT_NONE,
          UOP_PORT_SIZE,
       };
       uop_port_t uop_port;

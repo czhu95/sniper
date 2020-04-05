@@ -20,13 +20,13 @@
 
 // using namespace riscv;
 
-static unsigned int instructionLatencies[rv_op_last]; 
+static unsigned int instructionLatencies[rv_op_last];
 static unsigned int bypassLatencies[DynamicMicroOpBoomV1::UOP_BYPASS_SIZE];
 
 CoreModelBoomV1::CoreModelBoomV1()
 {
       // https://github.com/ucb-bar/riscv-boom/blob/master/src/main/scala/exu/execute.scala
-   int dfmaLatency = 4; 
+   int dfmaLatency = 4;
    int imulLatency = 3;
    for (unsigned int i = 0 ; i < rv_op_last ; i++)
    {
@@ -85,6 +85,11 @@ unsigned int CoreModelBoomV1::getBypassLatency(const DynamicMicroOp *uop) const
 unsigned int CoreModelBoomV1::getLongestLatency() const
 {
    return 60;
+}
+
+unsigned int CoreModelBoomV1::getPauseLatency() const
+{
+   return 100;
 }
 
 IntervalContention* CoreModelBoomV1::createIntervalContentionModel(const Core *core) const

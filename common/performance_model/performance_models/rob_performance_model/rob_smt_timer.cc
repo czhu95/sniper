@@ -36,6 +36,7 @@ RobSmtTimer::RobThread::RobThread(Core *_core, int window_size)
       , nextSequenceNumber(0)
       , frontend_stalled_until(SubsecondTime::Zero())
       , in_icache_miss(false)
+      , in_pause(false)
       , next_event(SubsecondTime::Zero())
       , registerDependencies(new RegisterDependencies())
       , memoryDependencies(new MemoryDependencies())
@@ -79,6 +80,7 @@ RobSmtTimer::RobSmtTimer(
       , m_rs_entries_used(0)
       , will_skip(false)
       , time_skipped(SubsecondTime::Zero())
+      , m_core_model(core_model)
       , m_mlp_histogram(Sim()->getCfg()->getBoolArray("perf_model/core/rob_timer/mlp_histogram", core->getId()))
 {
    computeCurrentWindowsize();
@@ -150,6 +152,7 @@ void RobSmtTimer::initializeThread(smtthread_id_t thread_num)
    thread->m_cpiBranchPredictor = SubsecondTime::Zero();
    thread->m_cpiSerialization = SubsecondTime::Zero();
    thread->m_cpiRSFull = SubsecondTime::Zero();
+   thread->m_cpiPause = SubsecondTime::Zero();
 
    registerStatsMetric("rob_timer", core->getId(), "cpiBase", &thread->m_cpiBase);
    // cpiIdle is already measured by MicroOpPerformanceModel, we just have it here as a place to dump extra cycles into.
@@ -158,6 +161,7 @@ void RobSmtTimer::initializeThread(smtthread_id_t thread_num)
    registerStatsMetric("rob_timer", core->getId(), "cpiBranchPredictor", &thread->m_cpiBranchPredictor);
    registerStatsMetric("rob_timer", core->getId(), "cpiSerialization", &thread->m_cpiSerialization);
    registerStatsMetric("rob_timer", core->getId(), "cpiRSFull", &thread->m_cpiRSFull);
+   registerStatsMetric("rob_timer", core->getId(), "cpiPause", &thread->m_cpiPause);
 
    thread->m_cpiInstructionCache.resize(HitWhere::NUM_HITWHERES, SubsecondTime::Zero());
    for (int h = HitWhere::WHERE_FIRST ; h < HitWhere::NUM_HITWHERES ; h++)
@@ -570,15 +574,7 @@ bool RobSmtTimer::tryDispatch(smtthread_id_t thread_num, SubsecondTime &next_eve
       bool iCacheMiss = (uop.getICacheHitWhere() != HitWhere::L1I);
       if (iCacheMiss)
       {
-         if (thread->in_icache_miss)
-         {
-            // We just took the latency for this instruction, now dispatch it
-            #ifdef DEBUG_PERCYCLE
-               std::cout<<"-- icache return"<<std::endl;
-            #endif
-            thread->in_icache_miss = false;
-         }
-         else
+         if (!thread->in_icache_miss)
          {
             #ifdef DEBUG_PERCYCLE
                std::cout<<"-- icache miss("<<uop.getICacheLatency()<<")"<<std::endl;
@@ -591,10 +587,44 @@ bool RobSmtTimer::tryDispatch(smtthread_id_t thread_num, SubsecondTime &next_eve
          }
       }
 
+      if (uop.getMicroOp()->isPause())
+      {
+         if (!thread->in_pause)
+         {
+            #ifdef DEBUG_PERCYCLE
+               std::cout<<"-- pause begin"<<std::endl;
+            #endif
+            // TODO: Use core-specific pause latency instead of uop exec latency.
+            thread->frontend_stalled_until = now + m_core_model->getPauseLatency();
+            thread->in_pause = true;
+            // Don't dispatch this instruction yet
+            thread->m_cpiCurrentFrontEndStall = &thread->m_cpiPause;
+            break;
+         }
+
+      }
+
       if (m_rs_entries_used == rsEntries)
       {
          thread->m_cpiCurrentFrontEndStall = &thread->m_cpiRSFull;
          break;
+      }
+
+      if (thread->in_icache_miss)
+      {
+         // We just took the latency for this instruction, now dispatch it
+         #ifdef DEBUG_PERCYCLE
+            std::cout<<"-- icache return"<<std::endl;
+         #endif
+         thread->in_icache_miss = false;
+      }
+
+      if (thread->in_pause)
+      {
+         #ifdef DEBUG_PERCYCLE
+            std::cout<<"-- pause end"<<std::endl;
+         #endif
+         thread->in_pause = false;
       }
 
       setDependencies(thread_num, entry);
@@ -1252,6 +1282,8 @@ void RobSmtTimer::printRob(smtthread_id_t thread_num)
       std::cout<<" stalled("<<(thread->frontend_stalled_until - now)<<")";
    if (thread->in_icache_miss)
       std::cout << ", in I-cache miss";
+   if (thread->in_pause)
+      std::cout << ", in pause";
    std::cout<<std::endl;
 
    if (thread->next_event > now)

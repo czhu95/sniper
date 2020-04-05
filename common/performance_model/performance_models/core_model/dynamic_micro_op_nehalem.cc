@@ -10,13 +10,14 @@ const char* DynamicMicroOpNehalem::PortTypeString(DynamicMicroOpNehalem::uop_por
 {
    switch(port)
    {
-      case UOP_PORT0:   return "port0";
-      case UOP_PORT1:   return "port1";
-      case UOP_PORT2:   return "port2";
-      case UOP_PORT34:  return "port34";
-      case UOP_PORT5:   return "port5";
-      case UOP_PORT05:  return "port05";
-      case UOP_PORT015: return "port015";
+      case UOP_PORT0:     return "port0";
+      case UOP_PORT1:     return "port1";
+      case UOP_PORT2:     return "port2";
+      case UOP_PORT34:    return "port34";
+      case UOP_PORT5:     return "port5";
+      case UOP_PORT05:    return "port05";
+      case UOP_PORT015:   return "port015";
+      case UOP_PORT_NONE: return "portnone";
       default:
          LOG_PRINT_ERROR("Unknown port type %d", port);
    }
@@ -130,6 +131,8 @@ DynamicMicroOpNehalem::uop_port_t DynamicMicroOpNehalem::getPort(const MicroOp *
             case XED_ICLASS_UNPCKLPD:
             case XED_ICLASS_UNPCKLPS:
                return DynamicMicroOpNehalem::UOP_PORT5;
+            case XED_ICLASS_PAUSE:
+               return DynamicMicroOpNehalem::UOP_PORT_NONE;
             default:
                return DynamicMicroOpNehalem::UOP_PORT015;
          }

@@ -37,6 +37,7 @@ class CoreModel
       virtual unsigned int getAluLatency(const MicroOp *uop) const = 0;
       virtual unsigned int getBypassLatency(const DynamicMicroOp *uop) const = 0;
       virtual unsigned int getLongestLatency() const = 0;
+      virtual unsigned int getPauseLatency() const = 0;
 };
 
 template <typename T> class BaseCoreModel : public CoreModel

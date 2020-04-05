@@ -65,6 +65,7 @@ private:
 
          SubsecondTime frontend_stalled_until;
          bool in_icache_miss;
+         bool in_pause;
 
          SubsecondTime next_event;
 
@@ -88,6 +89,7 @@ private:
          SubsecondTime m_cpiBranchPredictor;
          SubsecondTime m_cpiSerialization;
          SubsecondTime m_cpiRSFull;
+         SubsecondTime m_cpiPause;
 
          std::vector<SubsecondTime> m_cpiInstructionCache;
          std::vector<SubsecondTime> m_cpiDataCache;
@@ -153,6 +155,7 @@ private:
    uint64_t m_numHiddenLongerDCacheLatency;
 
    PerformanceModel *perf;
+   const CoreModel *m_core_model;
 
 #if DEBUG_IT_INSN_PRINT
    FILE *m_insn_log;

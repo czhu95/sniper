@@ -125,7 +125,7 @@ CoreModelNehalem::CoreModelNehalem()
    instructionLatencies[XED_ICLASS_UCOMISS] = 3; // 1 + 2 eflags bypass
    instructionLatencies[XED_ICLASS_UCOMISD] = 3; // 1 + 2 eflags bypass
 
-   instructionLatencies[XED_ICLASS_PAUSE] = 100;
+   instructionLatencies[XED_ICLASS_PAUSE] = 0;
 
 
    /* bypass latencies */
@@ -172,6 +172,11 @@ unsigned int CoreModelNehalem::getBypassLatency(const DynamicMicroOp *uop) const
 unsigned int CoreModelNehalem::getLongestLatency() const
 {
    return 60;
+}
+
+unsigned int CoreModelNehalem::getPauseLatency() const
+{
+   return 100;
 }
 
 IntervalContention* CoreModelNehalem::createIntervalContentionModel(const Core *core) const

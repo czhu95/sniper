@@ -36,7 +36,11 @@ bool RobContentionNehalem::tryIssue(const DynamicMicroOp &uop)
 
    const DynamicMicroOpNehalem *core_uop_info = uop.getCoreSpecificInfo<DynamicMicroOpNehalem>();
    DynamicMicroOpNehalem::uop_port_t uop_port = core_uop_info->getPort();
-   if (uop_port == DynamicMicroOpNehalem::UOP_PORT015)
+   if (uop_port == DynamicMicroOpNehalem::UOP_PORT_NONE)
+   {
+      return true;
+   }
+   else if (uop_port == DynamicMicroOpNehalem::UOP_PORT015)
    {
       if (ports_generic >= 3)
          return false;

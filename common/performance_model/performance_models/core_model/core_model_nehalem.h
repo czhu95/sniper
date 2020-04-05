@@ -21,6 +21,7 @@ class CoreModelNehalem : public BaseCoreModel<DynamicMicroOpNehalem>
       virtual unsigned int getAluLatency(const MicroOp *uop) const;
       virtual unsigned int getBypassLatency(const DynamicMicroOp *uop) const;
       virtual unsigned int getLongestLatency() const;
+      virtual unsigned int getPauseLatency() const;
       virtual unsigned int getLongLatencyCutoff() const { return m_lll_cutoff; }
 };
 

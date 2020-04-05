@@ -547,11 +547,12 @@ uint64_t IntervalTimer::dispatchInstruction(Windows::WindowEntry& micro_op, Stop
          //micro_op.setExecTime(exec_time_cycle);
       } else if (micro_op.getMicroOp()->isPause()) {
          uint64_t dispatch_cycle = m_windows->getCriticalPathTail();
-         uint64_t exec_time_cycle = dispatch_cycle + exec_latency;
-         micro_op.setExecTime(exec_time_cycle);
+         uint64_t pause_latency = m_core_model->getPauseLatency();
+         uint64_t pause_till = dispatch_cycle + pause_latency;
+         micro_op.setExecTime(pause_till);
 
-         m_windows->clearOldWindow(exec_time_cycle);
-         latency += exec_latency;
+         m_windows->clearOldWindow(pause_till);
+         latency += pause_latency;
       } else {
          uint64_t dispatch_cycle = std::max(max_producer_exec_time, m_windows->getCriticalPathHead());
          micro_op.setExecTime(dispatch_cycle + exec_latency);
