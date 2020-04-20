@@ -34,6 +34,7 @@ class ShmemPerfModel
       SubsecondTime getElapsedTime(Thread_t thread_num);
       void incrElapsedTime(SubsecondTime time, Thread_t thread_num);
       void updateElapsedTime(SubsecondTime time, Thread_t thread_num);
+      void rewindElapsedTime(SubsecondTime time, Thread_t thread_num);
 
       void incrTotalMemoryAccessLatency(SubsecondTime shmem_time);
 

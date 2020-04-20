@@ -289,19 +289,19 @@ namespace ParametricDramDirectoryMSI
          void doPrefetch(IntPtr prefetch_address, SubsecondTime t_start);
 
          // Cache meta-data operations
-         SharedCacheBlockInfo* getCacheBlockInfo(IntPtr address);
+         CacheBlockInfo* getCacheBlockInfo(IntPtr address);
          CacheState::cstate_t getCacheState(IntPtr address);
          CacheState::cstate_t getCacheState(CacheBlockInfo *cache_block_info);
-         SharedCacheBlockInfo* setCacheState(IntPtr address, CacheState::cstate_t cstate);
+         CacheBlockInfo* setCacheState(IntPtr address, CacheState::cstate_t cstate);
 
          // Cache data operations
          void invalidateCacheBlock(IntPtr address);
          void retrieveCacheBlock(IntPtr address, Byte* data_buf, ShmemPerfModel::Thread_t thread_num, bool update_replacement);
 
 
-         SharedCacheBlockInfo* insertCacheBlock(IntPtr address, CacheState::cstate_t cstate, Byte* data_buf, core_id_t requester, ShmemPerfModel::Thread_t thread_num);
+         CacheBlockInfo* insertCacheBlock(IntPtr address, CacheState::cstate_t cstate, Byte* data_buf, core_id_t requester, ShmemPerfModel::Thread_t thread_num);
          std::pair<SubsecondTime, bool> updateCacheBlock(IntPtr address, CacheState::cstate_t cstate, Transition::reason_t reason, Byte* out_buf, ShmemPerfModel::Thread_t thread_num);
-         void writeCacheBlock(IntPtr address, UInt32 offset, Byte* data_buf, UInt32 data_length, ShmemPerfModel::Thread_t thread_num);
+         void writeCacheBlock(IntPtr address, UInt32 offset, Byte* data_buf, UInt32 data_length, ShmemPerfModel::Thread_t thread_num, SubsecondTime slme_available);
 
          // Handle Request from previous level cache
          HitWhere::where_t processShmemReqFromPrevCache(CacheCntlr* requester, Core::mem_op_t mem_op_type, IntPtr address, bool modeled, bool count, Prefetch::prefetch_type_t isPrefetch, SubsecondTime t_issue, bool have_write_lock);

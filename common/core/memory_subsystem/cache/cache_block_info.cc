@@ -21,12 +21,13 @@ const char* CacheBlockInfo::getOptionName(option_t option)
 }
 
 
-CacheBlockInfo::CacheBlockInfo(IntPtr tag, CacheState::cstate_t cstate, UInt64 options):
+CacheBlockInfo::CacheBlockInfo(IntPtr tag, CacheState::cstate_t cstate, UInt64 options, SubsecondTime slme_available):
    m_tag(tag),
    m_cstate(cstate),
    m_owner(0),
    m_used(0),
-   m_options(options)
+   m_options(options),
+   m_slme_available(slme_available)
 {}
 
 CacheBlockInfo::~CacheBlockInfo()
@@ -57,6 +58,7 @@ CacheBlockInfo::invalidate()
 {
    m_tag = ~0;
    m_cstate = CacheState::INVALID;
+   m_slme_available = SubsecondTime::MaxTime();
 }
 
 void
@@ -67,6 +69,7 @@ CacheBlockInfo::clone(CacheBlockInfo* cache_block_info)
    m_owner = cache_block_info->m_owner;
    m_used = cache_block_info->m_used;
    m_options = cache_block_info->m_options;
+   m_slme_available = cache_block_info->m_slme_available;
 }
 
 bool

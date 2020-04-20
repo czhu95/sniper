@@ -52,6 +52,8 @@ namespace ParametricDramDirectoryMSI
          MemComponent::component_t m_last_level_cache;
          bool m_enabled;
 
+         UInt32 m_tag_directory_interleaving;
+
          ShmemPerf m_dummy_shmem_perf;
 
          // Performance Models

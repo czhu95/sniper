@@ -197,23 +197,21 @@ MemoryManager::MemoryManager(Core* core,
    }
    else
    {
-      SInt32 tag_directory_interleaving;
-
       // Place tag directores at each (master) cache
       if (tag_directory_locations == "llc")
       {
-         tag_directory_interleaving = cache_parameters[m_last_level_cache].shared_cores;
+         m_tag_directory_interleaving = cache_parameters[m_last_level_cache].shared_cores;
       }
       else if (tag_directory_locations == "interleaved")
       {
-         tag_directory_interleaving = Sim()->getCfg()->getInt("perf_model/dram_directory/interleaving") * smt_cores;
+         m_tag_directory_interleaving = Sim()->getCfg()->getInt("perf_model/dram_directory/interleaving") * smt_cores;
       }
       else
       {
          LOG_PRINT_ERROR("Invalid perf_model/dram_directory/locations value %s", tag_directory_locations.c_str());
       }
 
-      for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); core_id += tag_directory_interleaving)
+      for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); core_id += m_tag_directory_interleaving)
       {
          core_list_with_tag_directories.push_back(core_id);
       }
@@ -370,6 +368,7 @@ MemoryManager::MemoryManager(Core* core,
 
    // Register Call-backs
    getNetwork()->registerCallback(SHARED_MEM_1, MemoryManagerNetworkCallback, this);
+   getNetwork()->registerCallback(SLME_MAGIC, MemoryManagerNetworkCallback, this);
 
    // Set up core topology information
    getCore()->getTopologyInfo()->setup(smt_cores, cache_parameters[m_last_level_cache].shared_cores);
@@ -380,6 +379,7 @@ MemoryManager::~MemoryManager()
    UInt32 i;
 
    getNetwork()->unregisterCallback(SHARED_MEM_1);
+   getNetwork()->unregisterCallback(SLME_MAGIC);
 
    // Delete the Models
 
@@ -540,6 +540,20 @@ MemoryManager::sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemCo
 {
 MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, receiver, receiver_mem_component);
    assert((data_buf == NULL) == (data_length == 0));
+#ifdef SLME_DRAM
+   bool send_magic = msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REQ
+                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ
+                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ
+                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_EX_REQ
+                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_SH_REQ;
+   if (msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_EX_REP)
+      msg_type = PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REP;
+   else if (msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_SH_REP)
+      msg_type = PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP;
+#else
+   bool send_magic = false;
+#endif
+
    PrL1PrL2DramDirectoryMSI::ShmemMsg shmem_msg(msg_type, sender_mem_component, receiver_mem_component, requester, address, data_buf, data_length, perf);
    shmem_msg.setWhere(where);
 
@@ -552,7 +566,7 @@ MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, re
       LOG_PRINT("Sending Msg: type(%u), address(0x%x), sender_mem_component(%u), receiver_mem_component(%u), requester(%i), sender(%i), receiver(%i)", msg_type, address, sender_mem_component, receiver_mem_component, requester, getCore()->getId(), receiver);
    }
 
-   NetPacket packet(msg_time, SHARED_MEM_1,
+   NetPacket packet(msg_time, send_magic ? SLME_MAGIC : SHARED_MEM_1,
          m_core_id_master, receiver,
          shmem_msg.getMsgLen(), (const void*) msg_buf);
    getNetwork()->netSend(packet);

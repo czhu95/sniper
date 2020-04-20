@@ -534,7 +534,6 @@ MYLOG("processMemOpFromCore l%d after next fill", m_mem_component);
       }
    }
 
-
    if (modeled && m_next_cache_cntlr && !m_perfect && Sim()->getConfig()->hasCacheEfficiencyCallbacks())
    {
       bool new_bits = cache_block_info->updateUsage(offset, data_length);
@@ -551,6 +550,12 @@ MYLOG("access done");
 
    SubsecondTime t_now = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
    SubsecondTime total_latency = t_now - t_start;
+
+#ifdef SLME_CACHE
+   if (mem_op_type == Core::WRITE)
+      cache_block_info->setSLMeAvailable(t_now);
+#endif
+
 
    // From here on downwards: not long anymore, only stats update so blanket cntrl lock
    {
@@ -642,7 +647,7 @@ MYLOG("copyDataFromNextLevel l%d", m_mem_component);
       getMemoryManager()->incrElapsedTime(t_done - t_now - delay, ShmemPerfModel::_USER_THREAD);
    }
 
-   SharedCacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+   CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
    if (cache_block_info)
    {
       // Block already present (upgrade): don't insert, but update
@@ -770,7 +775,7 @@ CacheCntlr::processShmemReqFromPrevCache(CacheCntlr* requester, Core::mem_op_t m
    bool cache_hit = operationPermissibleinCache(address, mem_op_type), sibling_hit = false, prefetch_hit = false;
    bool first_hit = cache_hit;
    HitWhere::where_t hit_where = HitWhere::MISS;
-   SharedCacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+   CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
 
    if (!cache_hit && m_perfect)
    {
@@ -1029,7 +1034,7 @@ void
 CacheCntlr::notifyPrevLevelInsert(core_id_t core_id, MemComponent::component_t mem_component, IntPtr address)
 {
    #ifdef ENABLE_TRACK_SHARING_PREVCACHES
-   SharedCacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+   CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
    assert(cache_block_info);
    PrevCacheIndex idx = m_master->m_prev_cache_cntlrs.find(core_id, mem_component);
    cache_block_info->setCachedLoc(idx);
@@ -1044,7 +1049,7 @@ MYLOG("@%lx", address);
 MYLOG("here being evicted");
    } else {
       #ifdef ENABLE_TRACK_SHARING_PREVCACHES
-      SharedCacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+      CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
 MYLOG("here in state %c", CStateString(getCacheState(address)));
       assert(cache_block_info);
       PrevCacheIndex idx = m_master->m_prev_cache_cntlrs.find(core_id, mem_component);
@@ -1059,7 +1064,7 @@ CacheCntlr::updateUsageBits(IntPtr address, CacheBlockInfo::BitsUsedType used)
    bool new_bits;
    {
       ScopedLock sl(getLock());
-      SharedCacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+      CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
       new_bits = cache_block_info->updateUsage(used);
    }
    if (new_bits && m_next_cache_cntlr && !m_perfect)
@@ -1150,7 +1155,7 @@ CacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr address, 
       /* We're the first one to request this address, send the message to the directory now */
       if (exclusive)
       {
-         SharedCacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+         CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
          if (cache_block_info && (cache_block_info->getCState() == CacheState::SHARED))
          {
             processUpgradeReqToDirectory(address, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
@@ -1270,6 +1275,7 @@ CacheCntlr::accessCache(
       Core::mem_op_t mem_op_type, IntPtr ca_address, UInt32 offset,
       Byte* data_buf, UInt32 data_length, bool update_replacement)
 {
+   CacheBlockInfo *cache_block_info;
    switch (mem_op_type)
    {
       case Core::READ:
@@ -1279,13 +1285,14 @@ CacheCntlr::accessCache(
          break;
 
       case Core::WRITE:
-         m_master->m_cache->accessSingleLine(ca_address + offset, Cache::STORE, data_buf, data_length,
-                                             getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD), update_replacement);
+         cache_block_info = m_master->m_cache->accessSingleLine(ca_address + offset, Cache::STORE, data_buf, data_length,
+                                            getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD), update_replacement);
          // Write-through cache - Write the next level cache also
          if (m_cache_writethrough) {
             LOG_ASSERT_ERROR(m_next_cache_cntlr, "Writethrough enabled on last-level cache !?");
 MYLOG("writethrough start");
-            m_next_cache_cntlr->writeCacheBlock(ca_address, offset, data_buf, data_length, ShmemPerfModel::_USER_THREAD);
+            m_next_cache_cntlr->writeCacheBlock(ca_address, offset, data_buf, data_length, ShmemPerfModel::_USER_THREAD,
+                                                cache_block_info->getSLMeAvailable());
 MYLOG("writethrough done");
          }
          break;
@@ -1303,16 +1310,16 @@ MYLOG("writethrough done");
  * localized cache block operations
  *****************************************************************************/
 
-SharedCacheBlockInfo*
+CacheBlockInfo*
 CacheCntlr::getCacheBlockInfo(IntPtr address)
 {
-   return (SharedCacheBlockInfo*) m_master->m_cache->peekSingleLine(address);
+   return (CacheBlockInfo*) m_master->m_cache->peekSingleLine(address);
 }
 
 CacheState::cstate_t
 CacheCntlr::getCacheState(IntPtr address)
 {
-   SharedCacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+   CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
    return getCacheState(cache_block_info);
 }
 
@@ -1322,10 +1329,10 @@ CacheCntlr::getCacheState(CacheBlockInfo *cache_block_info)
    return (cache_block_info == NULL) ? CacheState::INVALID : cache_block_info->getCState();
 }
 
-SharedCacheBlockInfo*
+CacheBlockInfo*
 CacheCntlr::setCacheState(IntPtr address, CacheState::cstate_t cstate)
 {
-   SharedCacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+   CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
    cache_block_info->setCState(cstate);
    return cache_block_info;
 }
@@ -1348,7 +1355,7 @@ CacheCntlr::invalidateCacheBlock(IntPtr address)
 void
 CacheCntlr::retrieveCacheBlock(IntPtr address, Byte* data_buf, ShmemPerfModel::Thread_t thread_num, bool update_replacement)
 {
-   __attribute__((unused)) SharedCacheBlockInfo* cache_block_info = (SharedCacheBlockInfo*) m_master->m_cache->accessSingleLine(
+   __attribute__((unused)) CacheBlockInfo* cache_block_info = (CacheBlockInfo*) m_master->m_cache->accessSingleLine(
       address, Cache::LOAD, data_buf, getCacheBlockSize(), getShmemPerfModel()->getElapsedTime(thread_num), update_replacement);
    LOG_ASSERT_ERROR(cache_block_info != NULL, "Expected block to be there but it wasn't");
 }
@@ -1358,13 +1365,13 @@ CacheCntlr::retrieveCacheBlock(IntPtr address, Byte* data_buf, ShmemPerfModel::T
  * cache block operations that update the previous level(s)
  *****************************************************************************/
 
-SharedCacheBlockInfo*
+CacheBlockInfo*
 CacheCntlr::insertCacheBlock(IntPtr address, CacheState::cstate_t cstate, Byte* data_buf, core_id_t requester, ShmemPerfModel::Thread_t thread_num)
 {
 MYLOG("insertCacheBlock l%d @ %lx as %c (now %c)", m_mem_component, address, CStateString(cstate), CStateString(getCacheState(address)));
    bool eviction;
    IntPtr evict_address;
-   SharedCacheBlockInfo evict_block_info;
+   CacheBlockInfo evict_block_info;
    Byte evict_buf[getCacheBlockSize()];
 
    LOG_ASSERT_ERROR(getCacheState(address) == CacheState::INVALID, "we already have this line, can't add it again");
@@ -1372,7 +1379,7 @@ MYLOG("insertCacheBlock l%d @ %lx as %c (now %c)", m_mem_component, address, CSt
    m_master->m_cache->insertSingleLine(address, data_buf,
          &eviction, &evict_address, &evict_block_info, evict_buf,
          getShmemPerfModel()->getElapsedTime(thread_num), this);
-   SharedCacheBlockInfo* cache_block_info = setCacheState(address, cstate);
+   CacheBlockInfo* cache_block_info = setCacheState(address, cstate);
 
    if (Sim()->getInstrumentationMode() == InstMode::CACHE_ONLY)
       cache_block_info->setOption(CacheBlockInfo::WARMUP);
@@ -1457,7 +1464,7 @@ MYLOG("evicting @%lx", evict_address);
          } else {
             /* Send dirty block to next level cache. Probably we have an evict/victim buffer to do that when we're idle, so ignore timing */
             if (evict_block_info.getCState() == CacheState::MODIFIED)
-               m_next_cache_cntlr->writeCacheBlock(evict_address, 0, evict_buf, getCacheBlockSize(), thread_num);
+               m_next_cache_cntlr->writeCacheBlock(evict_address, 0, evict_buf, getCacheBlockSize(), thread_num, evict_block_info.getSLMeAvailable());
          }
          m_next_cache_cntlr->notifyPrevLevelEvict(m_core_id_master, m_mem_component, evict_address);
       }
@@ -1492,6 +1499,12 @@ MYLOG("evicting @%lx", evict_address);
       {
          /* Send dirty block to directory */
          UInt32 home_node_id = getHome(evict_address);
+         SubsecondTime slme_available = evict_block_info.getSLMeAvailable();
+         if (thread_num == ShmemPerfModel::_SIM_THREAD && slme_available != SubsecondTime::MaxTime())
+         {
+            // getShmemPerfModel()->rewindElapsedTime(slme_available, ShmemPerfModel::_SIM_THREAD);
+         }
+
          if (evict_block_info.getCState() == CacheState::MODIFIED)
          {
             // Send back the data also
@@ -1552,7 +1565,7 @@ CacheCntlr::updateCacheBlock(IntPtr address, CacheState::cstate_t new_cstate, Tr
       }
    }
 
-   SharedCacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+   CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
    __attribute__((unused)) CacheState::cstate_t old_cstate = cache_block_info ? cache_block_info->getCState() : CacheState::INVALID;
 
    bool buf_written = false, is_writeback = false;
@@ -1614,7 +1627,7 @@ CacheCntlr::updateCacheBlock(IntPtr address, CacheState::cstate_t new_cstate, Tr
             /* write straight into the next level cache */
             Byte data_buf[getCacheBlockSize()];
             retrieveCacheBlock(address, data_buf, thread_num, false);
-            m_next_cache_cntlr->writeCacheBlock(address, 0, data_buf, getCacheBlockSize(), thread_num);
+            m_next_cache_cntlr->writeCacheBlock(address, 0, data_buf, getCacheBlockSize(), thread_num, cache_block_info->getSLMeAvailable());
             is_writeback = true;
             sibling_hit = true;
 
@@ -1641,6 +1654,9 @@ CacheCntlr::updateCacheBlock(IntPtr address, CacheState::cstate_t new_cstate, Tr
             buf_written = true;
             is_writeback = true;
             sibling_hit = true;
+            SubsecondTime slme_available = cache_block_info->getSLMeAvailable();
+            if (slme_available != SubsecondTime::MaxTime())
+               getShmemPerfModel()->rewindElapsedTime(slme_available, ShmemPerfModel::_SIM_THREAD);
          }
          if (m_coherent)
             invalidateCacheBlock(address);
@@ -1653,6 +1669,9 @@ CacheCntlr::updateCacheBlock(IntPtr address, CacheState::cstate_t new_cstate, Tr
             buf_written = true;
             is_writeback = true;
             sibling_hit = true;
+            SubsecondTime slme_available = cache_block_info->getSLMeAvailable();
+            if (slme_available != SubsecondTime::MaxTime())
+               getShmemPerfModel()->rewindElapsedTime(slme_available, ShmemPerfModel::_SIM_THREAD);
          }
 
          cache_block_info->setCState(new_cstate);
@@ -1694,7 +1713,8 @@ CacheCntlr::updateCacheBlock(IntPtr address, CacheState::cstate_t new_cstate, Tr
 }
 
 void
-CacheCntlr::writeCacheBlock(IntPtr address, UInt32 offset, Byte* data_buf, UInt32 data_length, ShmemPerfModel::Thread_t thread_num)
+CacheCntlr::writeCacheBlock(IntPtr address, UInt32 offset, Byte* data_buf, UInt32 data_length, ShmemPerfModel::Thread_t thread_num,
+                            SubsecondTime slme_available)
 {
 MYLOG(" ");
 
@@ -1707,15 +1727,16 @@ assert(data_length==getCacheBlockSize());
       if (data_buf)
          memcpy(m_master->m_evicting_buf + offset, data_buf, data_length);
    } else {
-      __attribute__((unused)) SharedCacheBlockInfo* cache_block_info = (SharedCacheBlockInfo*) m_master->m_cache->accessSingleLine(
+      CacheBlockInfo* cache_block_info = m_master->m_cache->accessSingleLine(
          address + offset, Cache::STORE, data_buf, data_length, getShmemPerfModel()->getElapsedTime(thread_num), false);
+      cache_block_info->setSLMeAvailable(slme_available);
       LOG_ASSERT_ERROR(cache_block_info, "writethrough expected a hit at next-level cache but got miss");
       LOG_ASSERT_ERROR(cache_block_info->getCState() == CacheState::MODIFIED, "Got writeback for non-MODIFIED line");
    }
 
    if (m_cache_writethrough) {
       acquireStackLock(true);
-      m_next_cache_cntlr->writeCacheBlock(address, offset, data_buf, data_length, thread_num);
+      m_next_cache_cntlr->writeCacheBlock(address, offset, data_buf, data_length, thread_num, slme_available);
       releaseStackLock(true);
    }
 }
@@ -1727,7 +1748,7 @@ CacheCntlr::isInLowerLevelCache(CacheBlockInfo *block_info)
    for(CacheCntlrList::iterator it = m_master->m_prev_cache_cntlrs.begin(); it != m_master->m_prev_cache_cntlrs.end(); it++)
    {
       // All caches are inclusive, so there is no need to propagate further
-      SharedCacheBlockInfo* block_info = (*it)->getCacheBlockInfo(address);
+      CacheBlockInfo* block_info = (*it)->getCacheBlockInfo(address);
       if (block_info != NULL)
          return true;
    }

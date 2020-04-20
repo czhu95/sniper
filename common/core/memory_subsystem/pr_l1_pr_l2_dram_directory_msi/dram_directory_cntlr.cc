@@ -233,7 +233,7 @@ DramDirectoryCntlr::processNextReqFromL2Cache(IntPtr address)
       ShmemReq* shmem_req = m_dram_directory_req_queue_list->front(address);
 
       // Update the Shared Mem Cycle Counts appropriately
-      getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_SIM_THREAD, shmem_req->getTime());
+      getShmemPerfModel()->updateElapsedTime(shmem_req->getTime(), ShmemPerfModel::_SIM_THREAD);
 
       if (shmem_req->getShmemMsg()->getMsgType() == ShmemMsg::EX_REQ)
       {
@@ -611,6 +611,12 @@ DramDirectoryCntlr::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
    DirectoryEntry* directory_entry = m_dram_directory_cache->getDirectoryEntry(address);
    assert(directory_entry != NULL);
 
+#ifdef SLME_DRAM
+   SubsecondTime slme_available = directory_entry->getDirectoryBlockInfo()->getSLMeAvailable();
+   if (cached_data_buf && slme_available != SubsecondTime::MaxTime())
+      getShmemPerfModel()->rewindElapsedTime(slme_available, ShmemPerfModel::_SIM_THREAD);
+#endif
+
    MYLOG("Start @ %lx", address);
    if (cached_data_buf != NULL)
    {
@@ -745,21 +751,37 @@ DramDirectoryCntlr::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
          assert(curr_dstate == DirectoryState::SHARED || curr_dstate == DirectoryState::EXCLUSIVE);
          if (curr_dstate == DirectoryState::EXCLUSIVE)
          {
+#ifdef SLME_DRAM
+            reply_msg_type = ShmemMsg::SLME_EX_REP;
+#else
             reply_msg_type = ShmemMsg::EX_REP;
+#endif
          }
          else
          {
+#ifdef SLME_DRAM
+            reply_msg_type = ShmemMsg::SLME_SH_REP;
+#else
             reply_msg_type = ShmemMsg::SH_REP;
+#endif
          }
          break;
       case ShmemMsg::EX_REQ:
+#ifdef SLME_DRAM
+         reply_msg_type = ShmemMsg::SLME_EX_REP;
+#else
          reply_msg_type = ShmemMsg::EX_REP;
+#endif
          assert(curr_dstate == DirectoryState::MODIFIED);
          break;
       case ShmemMsg::UPGRADE_REQ:
       {
          // if we had to get the data from DRAM, nobody has it anymore: send EX_REP
+#ifdef SLME_DRAM
+         reply_msg_type = ShmemMsg::SLME_EX_REP;
+#else
          reply_msg_type = ShmemMsg::EX_REP;
+#endif
          break;
       }
       default:
@@ -1078,6 +1100,7 @@ DramDirectoryCntlr::processFlushRepFromL2Cache(core_id_t sender, ShmemMsg* shmem
    assert(directory_entry);
 
    DirectoryBlockInfo* directory_block_info = directory_entry->getDirectoryBlockInfo();
+   directory_block_info->setSLMeAvailable(now);
 
    assert(directory_entry->hasSharer(sender));
    directory_entry->removeSharer(sender);
@@ -1166,6 +1189,7 @@ DramDirectoryCntlr::processWbRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_ms
    assert(directory_entry);
 
    DirectoryBlockInfo* directory_block_info = directory_entry->getDirectoryBlockInfo();
+   directory_block_info->setSLMeAvailable(now);
 
    //assert(directory_block_info->getDState() == DirectoryState::MODIFIED);
    assert(directory_entry->hasSharer(sender));

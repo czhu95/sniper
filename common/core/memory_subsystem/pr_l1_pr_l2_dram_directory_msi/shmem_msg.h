@@ -36,6 +36,11 @@ namespace PrL1PrL2DramDirectoryMSI
             // DRAM > tag directory
             DRAM_READ_REP,
 
+#ifdef SLME_DRAM
+            SLME_SH_REP,
+            SLME_EX_REP,
+#endif
+
             MAX_MSG_TYPE = NULLIFY_REQ,
             NUM_MSG_TYPES = MAX_MSG_TYPE - MIN_MSG_TYPE + 1
          };

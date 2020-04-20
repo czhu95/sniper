@@ -120,7 +120,7 @@ NetworkModelEMeshHopByHop::routePacket(const NetPacket &pkt, std::vector<Hop> &n
 
    core_id_t requester = INVALID_CORE_ID;
 
-   if (pkt.type == SHARED_MEM_1)
+   if (pkt.type == SHARED_MEM_1 || pkt.type == SLME_MAGIC)
       requester = getNetwork()->getCore()->getMemoryManager()->getShmemRequester(pkt.data);
    else // Other Packet types
       requester = pkt.sender;
@@ -198,7 +198,7 @@ NetworkModelEMeshHopByHop::routePacket(const NetPacket &pkt, std::vector<Hop> &n
          }
       }
    }
-   else if (m_fake_node)
+   else if (m_fake_node || pkt.type == SLME_MAGIC)
    {
       addHop(DESTINATION, pkt.receiver, pkt.receiver, pkt.time, pkt_length, nextHops, requester);
    }
@@ -217,7 +217,8 @@ NetworkModelEMeshHopByHop::routePacket(const NetPacket &pkt, std::vector<Hop> &n
       OutputDirection direction;
       core_id_t next_dest = getNextDest(pkt.receiver, direction);
 
-      addHop(direction, pkt.receiver, next_dest, curr_time, pkt_length, nextHops, requester, (subsecond_time_t*)&pkt.queue_delay);
+      addHop(direction, pkt.receiver, next_dest, curr_time, pkt_length, nextHops, requester,
+             (subsecond_time_t*)&pkt.queue_delay);
    }
 }
 
@@ -230,7 +231,7 @@ NetworkModelEMeshHopByHop::processReceivedPacket(NetPacket& pkt)
 
    core_id_t requester = INVALID_CORE_ID;
 
-   if (pkt.type == SHARED_MEM_1)
+   if (pkt.type == SHARED_MEM_1 || pkt.type == SLME_MAGIC)
       requester = getNetwork()->getCore()->getMemoryManager()->getShmemRequester(pkt.data);
    else // Other Packet types
       requester = pkt.sender;
@@ -244,6 +245,7 @@ NetworkModelEMeshHopByHop::processReceivedPacket(NetPacket& pkt)
 
    SubsecondTime packet_latency = pkt.time - pkt.start_time;
    SubsecondTime contention_delay = packet_latency - (computeDistance(pkt.sender, m_core_id) * m_hop_latency.getLatency());
+   // LOG_ASSERT_ERROR(pkt.type != SLME_MAGIC || contention_delay == SubsecondTime::Zero(), "SLME packet error");
 
    if (pkt.sender != m_core_id && !m_fake_node)
    {

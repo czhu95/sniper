@@ -461,7 +461,7 @@ void Network::disableModels()
 // Modeling
 UInt32 Network::getModeledLength(const NetPacket& pkt)
 {
-   if (pkt.type == SHARED_MEM_1)
+   if (pkt.type == SHARED_MEM_1 || pkt.type == SLME_MAGIC)
    {
       // packet_type + sender + receiver + length + shmem_msg.size()
       // 1 byte for packet_type

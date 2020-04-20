@@ -7,6 +7,7 @@ enum PacketType
    SHARED_MEM_1,
    SIM_THREAD_TERMINATE_THREADS,
    CORE_THREAD_TERMINATE_THREADS,
+   SLME_MAGIC,
    NUM_PACKET_TYPES
 };
 
@@ -28,7 +29,7 @@ static EStaticNetwork g_type_to_static_network_map[] __attribute__((unused)) =
    STATIC_NETWORK_MEMORY_1,      // SM_1
    STATIC_NETWORK_SYSTEM,        // ST_TERMINATE_THREADS
    STATIC_NETWORK_SYSTEM,        // CT_TERMINATE_THREADS
-
+   STATIC_NETWORK_MEMORY_1,      // SLME
 };
 
 #endif

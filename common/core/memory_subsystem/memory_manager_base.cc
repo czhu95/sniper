@@ -44,6 +44,7 @@ void MemoryManagerNetworkCallback(void* obj, NetPacket packet)
 
    switch (packet.type)
    {
+      case SLME_MAGIC:
       case SHARED_MEM_1:
          mm->handleMsgFromNetwork(packet);
          break;

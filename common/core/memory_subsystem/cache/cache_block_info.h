@@ -4,6 +4,7 @@
 #include "fixed_types.h"
 #include "cache_state.h"
 #include "cache_base.h"
+#include "subsecond_time.h"
 
 class CacheBlockInfo
 {
@@ -26,13 +27,14 @@ class CacheBlockInfo
       UInt64 m_owner;
       BitsUsedType m_used;
       UInt8 m_options;  // large enough to hold a bitfield for all available option_t's
+      SubsecondTime m_slme_available;
 
       static const char* option_names[];
 
    public:
       CacheBlockInfo(IntPtr tag = ~0,
             CacheState::cstate_t cstate = CacheState::INVALID,
-            UInt64 options = 0);
+            UInt64 options = 0, SubsecondTime slme_available = SubsecondTime::MaxTime());
       virtual ~CacheBlockInfo();
 
       static CacheBlockInfo* create(CacheBase::cache_t cache_type);
@@ -58,6 +60,9 @@ class CacheBlockInfo
       BitsUsedType getUsage() const { return m_used; };
       bool updateUsage(UInt32 offset, UInt32 size);
       bool updateUsage(BitsUsedType used);
+
+      void setSLMeAvailable(SubsecondTime time) { m_slme_available = time; }
+      SubsecondTime getSLMeAvailable() const { return m_slme_available; }
 
       static const char* getOptionName(option_t option);
 };

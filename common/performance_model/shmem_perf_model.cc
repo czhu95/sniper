@@ -46,6 +46,16 @@ ShmemPerfModel::updateElapsedTime(SubsecondTime time, Thread_t thread_num)
 }
 
 void
+ShmemPerfModel::rewindElapsedTime(SubsecondTime time, Thread_t thread_num)
+{
+   LOG_PRINT("rewindElapsedTime: time(%s)", itostr(time).c_str());
+   //ScopedLock sl(m_shmem_perf_model_lock);
+
+   if (m_elapsed_time[thread_num] > time)
+      m_elapsed_time[thread_num] = time;
+}
+
+void
 ShmemPerfModel::incrElapsedTime(SubsecondTime time, Thread_t thread_num)
 {
    LOG_PRINT("incrElapsedTime: time(%s)", itostr(time).c_str());

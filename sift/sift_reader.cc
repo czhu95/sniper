@@ -249,7 +249,9 @@ bool Sift::Reader::Read(Instruction &inst)
                      else
                         ++ it;
                   }
+                  m_last_sinst = NULL;
                   handleICacheFlushFunc(handleICacheFlushArg, address);
+                  delete[] icache[address];
                }
 #endif
                icache[address] = bytes;
