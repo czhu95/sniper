@@ -544,8 +544,8 @@ MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, re
    bool send_magic = msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REQ
                      || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ
                      || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ
-                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_EX_REQ
-                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_SH_REQ;
+                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_EX_REP
+                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_SH_REP;
    if (msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_EX_REP)
       msg_type = PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REP;
    else if (msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_SH_REP)
