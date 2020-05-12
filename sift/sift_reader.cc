@@ -47,6 +47,8 @@ Sift::Reader::Reader(const char *filename, const char *response_filename, uint32
    , handleVCPUArg(NULL)
    , handleICacheFlushFunc(NULL)
    , handleICacheFlushArg(NULL)
+   , handleGMMCmdFunc(NULL)
+   , handleGMMCmdArg(NULL)
    , filesize(0)
    , last_address(0)
    , icache()
@@ -221,7 +223,7 @@ bool Sift::Reader::Read(Instruction &inst)
                m_seen_end = true;
 #ifndef __PIN__
                // disable EndResponse as it causes lockups with sift_recorder
-               sendSimpleResponse(RecOtherEndResponse);
+               // sendSimpleResponse(RecOtherEndResponse);
 #endif
                return false;
             case RecOtherIcache:
@@ -231,6 +233,10 @@ bool Sift::Reader::Read(Instruction &inst)
                uint8_t *bytes = new uint8_t[ICACHE_SIZE];
                input->read(reinterpret_cast<char*>(&address), sizeof(uint64_t));
                input->read(reinterpret_cast<char*>(bytes), ICACHE_SIZE);
+
+               // std::cout << "[DEBUG:" << m_id << "] icache 0x"
+               //           << std::hex << address << std::dec << std::endl;
+
 #ifndef __PIN__
                if (icache.count(address))
                {
@@ -316,7 +322,15 @@ bool Sift::Reader::Read(Instruction &inst)
                uint64_t vp, pp;
                input->read(reinterpret_cast<char*>(&vp), sizeof(uint64_t));
                input->read(reinterpret_cast<char*>(&pp), sizeof(uint64_t));
-               vcache[vp] = pp;
+               std::cout << "[DEBUG:" << m_id << "] va2pa 0x"
+                         << std::hex << vp << " -> 0x"
+                         << pp << std::dec << std::endl;
+               {
+#ifndef __PIN__
+                 std::unique_lock lock(vcache_mtx);
+#endif
+                 vcache[vp] = pp;
+               }
                break;
             }
             case RecOtherInstructionCount:
@@ -558,6 +572,24 @@ bool Sift::Reader::Read(Instruction &inst)
                #endif
                assert(rec.Other.size == 0);
                handleVCPUResumeFunc(handleVCPUArg);
+               break;
+            }
+            case RecOtherGMMCommand:
+            {
+               // #if VERBOSE > 0
+               std::cerr << "[DEBUG:" << m_id << "] Read GMMCommand" << std::endl;
+               // #endif
+               assert(rec.Other.size == 3 * sizeof(uint64_t));
+               uint64_t a, b, c;
+               input->read(reinterpret_cast<char*>(&a), sizeof(uint64_t));
+               input->read(reinterpret_cast<char*>(&b), sizeof(uint64_t));
+               input->read(reinterpret_cast<char*>(&c), sizeof(uint64_t));
+               if (handleGMMCmdFunc)
+               {
+                  handleGMMCmdFunc(handleGMMCmdArg, a, b, c);
+               }
+
+               sendSimpleResponse(RecOtherGMMCommandResponse);
                break;
             }
             default:
@@ -881,6 +913,9 @@ uint64_t Sift::Reader::va2pa(uint64_t va)
       intptr_t vp = va / PAGE_SIZE_SIFT;
       intptr_t vo = va & (PAGE_SIZE_SIFT-1);
 
+#ifndef __PIN__
+      std::shared_lock lock(vcache_mtx);
+#endif
       if (vcache.count(vp) == 0)
       {
          return 0;

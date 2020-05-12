@@ -87,6 +87,7 @@ namespace Sift
          void Translate(uint64_t va, uint64_t pa);
          void VCPUIdle();
          void VCPUResume();
+         void GMMCommand(uint64_t cmd_type, uintptr_t segment, uint64_t arg1);
 
          void setHandleAccessMemoryFunc(HandleAccessMemoryFunc func, void* arg = NULL) { assert(func); handleAccessMemoryFunc = func; handleAccessMemoryArg = arg; }
    };

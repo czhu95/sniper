@@ -11,6 +11,9 @@
 #include <unordered_map>
 #include <fstream>
 #include <cassert>
+#ifndef __PIN__
+#include <shared_mutex>
+#endif
 
 class vistream;
 class vostream;
@@ -59,6 +62,7 @@ namespace Sift
       typedef void (*HandleVCPUIdleFunc)(void *arg);
       typedef void (*HandleVCPUResumeFunc)(void *arg);
       typedef void (*HandleICacheFlushFunc)(void *arg, uint64_t page_addr);
+      typedef void (*HandleGMMCmdFunc)(void *arg, uintptr_t start, uint64_t msg_type, uint64_t arg1);
 
       private:
          vistream *input;
@@ -89,6 +93,8 @@ namespace Sift
          void *handleVCPUArg;
          HandleICacheFlushFunc handleICacheFlushFunc;
          void *handleICacheFlushArg;
+         HandleGMMCmdFunc handleGMMCmdFunc;
+         void *handleGMMCmdArg;
          uint64_t filesize;
          std::ifstream *inputstream;
 
@@ -103,12 +109,16 @@ namespace Sift
          std::unordered_map<uint64_t, const StaticInstruction*> scache;
          std::unordered_map<uint64_t, uint64_t> vcache;
 
+#ifndef __PIN__
+         std::shared_mutex vcache_mtx;
+#endif
+
          uint32_t m_id;
 
          bool m_trace_has_pa;
          bool m_seen_end;
          const StaticInstruction *m_last_sinst;
-         
+
          int m_isa;
 
          bool initResponse();
@@ -137,6 +147,7 @@ namespace Sift
          void setHandleForkFunc(HandleForkFunc func, void* arg = NULL) { assert(func); handleForkFunc = func; handleForkArg = arg;}
          void setHandleVCPUFunc(HandleVCPUIdleFunc funcIdle, HandleVCPUResumeFunc funcResume, void *arg = NULL) { assert(funcIdle); assert(funcResume); handleVCPUIdleFunc = funcIdle; handleVCPUResumeFunc = funcResume; handleVCPUArg = arg; }
          void setHandleICacheFlushFunc(HandleICacheFlushFunc func, void *arg = NULL) { handleICacheFlushFunc = func; handleICacheFlushArg = arg; }
+         void setHandleGMMCmdFunc(HandleGMMCmdFunc func, void *arg = NULL) { handleGMMCmdFunc = func; handleGMMCmdArg = arg; }
 
          uint64_t getPosition();
          uint64_t getLength();

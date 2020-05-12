@@ -1,9 +1,9 @@
+#include "global_memory_manager.h"
+#include "gmm_core.h"
+#include "policy.h"
 #include "core_manager.h"
-#include "memory_manager.h"
 #include "cache_base.h"
-#include "nuca_cache.h"
 #include "dram_cache.h"
-#include "tlb.h"
 #include "simulator.h"
 #include "log.h"
 #include "dvfs_manager.h"
@@ -12,37 +12,36 @@
 #include "config.hpp"
 #include "distribution.h"
 #include "topology_info.h"
-
-#include <algorithm>
+#include "directory_msi_policy.h"
+#include "replication_policy.h"
 
 #if 0
    extern Lock iolock;
 #  include "core_manager.h"
 #  include "simulator.h"
-#  define MYLOG(...) { ScopedLock l(iolock); fflush(stderr); fprintf(stderr, "[%s] %d%cmm %-25s@%03u: ", itostr(getShmemPerfModel()->getElapsedTime()).c_str(), getCore()->getId(), Sim()->getCoreManager()->amiUserThread() ? '^' : '_', __FUNCTION__, __LINE__); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); fflush(stderr); }
+#  define MYLOG(...) { ScopedLock l(iolock); fflush(stderr); fprintf(stderr, "[%s] %d%cmm %-25s@%03u: ", itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD)).c_str(), getCore()->getId(), Sim()->getCoreManager()->amiUserThread() ? '^' : '_', __FUNCTION__, __LINE__); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); fflush(stderr); }
 #else
 #  define MYLOG(...) {}
 #endif
 
 
-namespace ParametricDramDirectoryMSI
+namespace SingleLevelMemory
 {
 
-std::map<CoreComponentType, CacheCntlr*> MemoryManager::m_all_cache_cntlrs;
+using ParametricDramDirectoryMSI::CacheParameters;
 
-MemoryManager::MemoryManager(Core* core,
+std::map<CoreComponentType, VirtCacheCntlr*> GlobalMemoryManager::m_all_cache_cntlrs;
+
+GlobalMemoryManager::GlobalMemoryManager(Core* core,
       Network* network, ShmemPerfModel* shmem_perf_model):
    MemoryManagerBase(core, network, shmem_perf_model),
-   m_nuca_cache(NULL),
    m_dram_cache(NULL),
-   m_dram_directory_cntlr(NULL),
+   m_gmm_core(NULL),
    m_dram_cntlr(NULL),
-   m_itlb(NULL), m_dtlb(NULL), m_stlb(NULL),
-   m_tlb_miss_penalty(NULL,0),
-   m_tlb_miss_parallel(false),
-   m_tag_directory_present(false),
+   m_gmm_present(false),
    m_dram_cntlr_present(false),
-   m_enabled(false)
+   m_enabled(false),
+   m_default_policy(NULL)
 {
    // Read Parameters from the Config file
    std::map<MemComponent::component_t, CacheParameters> cache_parameters;
@@ -68,18 +67,6 @@ MemoryManager::MemoryManager(Core* core,
       m_cache_block_size = Sim()->getCfg()->getInt("perf_model/l1_icache/cache_block_size");
 
       m_last_level_cache = (MemComponent::component_t)(Sim()->getCfg()->getInt("perf_model/cache/levels") - 2 + MemComponent::L2_CACHE);
-
-      UInt32 stlb_size = Sim()->getCfg()->getInt("perf_model/stlb/size");
-      if (stlb_size)
-         m_stlb = new TLB("stlb", "perf_model/stlb", getCore()->getId(), stlb_size, Sim()->getCfg()->getInt("perf_model/stlb/associativity"), NULL);
-      UInt32 itlb_size = Sim()->getCfg()->getInt("perf_model/itlb/size");
-      if (itlb_size)
-         m_itlb = new TLB("itlb", "perf_model/itlb", getCore()->getId(), itlb_size, Sim()->getCfg()->getInt("perf_model/itlb/associativity"), m_stlb);
-      UInt32 dtlb_size = Sim()->getCfg()->getInt("perf_model/dtlb/size");
-      if (dtlb_size)
-         m_dtlb = new TLB("dtlb", "perf_model/dtlb", getCore()->getId(), dtlb_size, Sim()->getCfg()->getInt("perf_model/dtlb/associativity"), m_stlb);
-      m_tlb_miss_penalty = ComponentLatency(core->getDvfsDomain(), Sim()->getCfg()->getInt("perf_model/tlb/penalty"));
-      m_tlb_miss_parallel = Sim()->getCfg()->getBool("perf_model/tlb/penalty_parallel");
 
       smt_cores = Sim()->getCfg()->getInt("perf_model/core/logical_cpus");
 
@@ -186,44 +173,17 @@ MemoryManager::MemoryManager(Core* core,
    m_user_thread_sem = new Semaphore(0);
    m_network_thread_sem = new Semaphore(0);
 
-   std::vector<core_id_t> core_list_with_dram_controllers = getCoreListWithMemoryControllers();
-   std::vector<core_id_t> core_list_with_tag_directories;
-   String tag_directory_locations = Sim()->getCfg()->getString("perf_model/dram_directory/locations");
+   m_core_list_with_dram_controllers = getCoreListWithMemoryControllers();
+   String gmm_locations = Sim()->getCfg()->getString("perf_model/dram_directory/locations");
 
-   if (tag_directory_locations == "dram")
-   {
-      // Place tag directories only at DRAM controllers
-      core_list_with_tag_directories = core_list_with_dram_controllers;
-   }
-   else
-   {
-      // Place tag directores at each (master) cache
-      if (tag_directory_locations == "llc")
-      {
-         m_tag_directory_interleaving = cache_parameters[m_last_level_cache].shared_cores;
-      }
-      else if (tag_directory_locations == "interleaved")
-      {
-         m_tag_directory_interleaving = Sim()->getCfg()->getInt("perf_model/dram_directory/interleaving") * smt_cores;
-      }
-      else
-      {
-         LOG_PRINT_ERROR("Invalid perf_model/dram_directory/locations value %s", tag_directory_locations.c_str());
-      }
-
-      for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); core_id += m_tag_directory_interleaving)
-      {
-         core_list_with_tag_directories.push_back(core_id);
-      }
-   }
-
-   m_tag_directory_home_lookup = new AddressHomeLookup(dram_directory_home_lookup_param, core_list_with_tag_directories, getCacheBlockSize());
-   m_dram_controller_home_lookup = new AddressHomeLookup(dram_directory_home_lookup_param, core_list_with_dram_controllers, getCacheBlockSize());
+   m_core_list_with_gmm = m_core_list_with_dram_controllers;
+   m_gmm_home_lookup = new AddressHomeLookup(dram_directory_home_lookup_param, m_core_list_with_gmm, getCacheBlockSize());
+   m_dram_controller_home_lookup = new AddressHomeLookup(dram_directory_home_lookup_param, m_core_list_with_dram_controllers, getCacheBlockSize());
 
    // if (m_core->getId() == 0)
-   //   printCoreListWithMemoryControllers(core_list_with_dram_controllers);
+   //   printCoreListWithMemoryControllers(m_core_list_with_dram_controllers);
 
-   if (find(core_list_with_dram_controllers.begin(), core_list_with_dram_controllers.end(), getCore()->getId()) != core_list_with_dram_controllers.end())
+   if (find(m_core_list_with_dram_controllers.begin(), m_core_list_with_dram_controllers.end(), getCore()->getId()) != m_core_list_with_dram_controllers.end())
    {
       m_dram_cntlr_present = true;
 
@@ -239,27 +199,15 @@ MemoryManager::MemoryManager(Core* core,
       }
    }
 
-   if (find(core_list_with_tag_directories.begin(), core_list_with_tag_directories.end(), getCore()->getId()) != core_list_with_tag_directories.end())
+   if (find(m_core_list_with_gmm.begin(), m_core_list_with_gmm.end(), getCore()->getId()) != m_core_list_with_gmm.end())
    {
-      m_tag_directory_present = true;
+      m_gmm_present = true;
 
       if (!dram_direct_access)
       {
-         if (nuca_enable)
-         {
-            m_nuca_cache = new NucaCache(
-               this,
-               getShmemPerfModel(),
-               m_tag_directory_home_lookup,
-               getCacheBlockSize(),
-               nuca_parameters);
-            Sim()->getStatsManager()->logTopology("nuca-cache", core->getId(), core->getId());
-         }
-
-         m_dram_directory_cntlr = new PrL1PrL2DramDirectoryMSI::DramDirectoryCntlr(getCore()->getId(),
+         m_default_policy = new DirectoryMSIPolicy(getCore()->getId(),
                this,
                m_dram_controller_home_lookup,
-               m_nuca_cache,
                dram_directory_total_entries,
                dram_directory_associativity,
                getCacheBlockSize(),
@@ -268,17 +216,18 @@ MemoryManager::MemoryManager(Core* core,
                dram_directory_type_str,
                dram_directory_cache_access_time,
                getShmemPerfModel());
-         Sim()->getStatsManager()->logTopology("tag-dir", core->getId(), core->getId());
+         m_gmm_core = new GMMCore(getCore()->getId(), this, getShmemPerfModel());
+         Sim()->getStatsManager()->logTopology("gmm-core", core->getId(), core->getId());
       }
    }
 
    for(UInt32 i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i) {
-      CacheCntlr* cache_cntlr = new CacheCntlr(
+      VirtCacheCntlr* cache_cntlr = new VirtCacheCntlr(
          (MemComponent::component_t)i,
          cache_names[(MemComponent::component_t)i],
          getCore()->getId(),
          this,
-         m_tag_directory_home_lookup,
+         m_gmm_home_lookup,
          m_user_thread_sem,
          m_network_thread_sem,
          getCacheBlockSize(),
@@ -322,9 +271,9 @@ MemoryManager::MemoryManager(Core* core,
                        "Make sure perf_model/dram/controllers_interleaving is a multiple of perf_model/l%d_cache/shared_cores\n",
                        Sim()->getCfg()->getInt("perf_model/cache/levels")
                       );
-   if (m_tag_directory_present)
+   if (m_gmm_present)
       LOG_ASSERT_ERROR(m_cache_cntlrs[m_last_level_cache]->isMasterCache() == true,
-                       "Tag directories may only be at 'master' node of shared caches\n"
+                       "GMM may only be at 'master' node of shared caches\n"
                        "\n"
                        "Make sure perf_model/dram_directory/interleaving is a multiple of perf_model/l%d_cache/shared_cores\n",
                        Sim()->getCfg()->getInt("perf_model/cache/levels")
@@ -374,7 +323,7 @@ MemoryManager::MemoryManager(Core* core,
    getCore()->getTopologyInfo()->setup(smt_cores, cache_parameters[m_last_level_cache].shared_cores);
 }
 
-MemoryManager::~MemoryManager()
+GlobalMemoryManager::~GlobalMemoryManager()
 {
    UInt32 i;
 
@@ -382,10 +331,6 @@ MemoryManager::~MemoryManager()
    getNetwork()->unregisterCallback(SLME_MAGIC);
 
    // Delete the Models
-
-   if (m_itlb) delete m_itlb;
-   if (m_dtlb) delete m_dtlb;
-   if (m_stlb) delete m_stlb;
 
    for(i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
    {
@@ -395,7 +340,7 @@ MemoryManager::~MemoryManager()
 
    delete m_user_thread_sem;
    delete m_network_thread_sem;
-   delete m_tag_directory_home_lookup;
+   delete m_gmm_home_lookup;
    delete m_dram_controller_home_lookup;
 
    for(i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
@@ -404,18 +349,25 @@ MemoryManager::~MemoryManager()
       m_cache_cntlrs[(MemComponent::component_t)i] = NULL;
    }
 
-   if (m_nuca_cache)
-      delete m_nuca_cache;
    if (m_dram_cache)
       delete m_dram_cache;
    if (m_dram_cntlr)
       delete m_dram_cntlr;
-   if (m_dram_directory_cntlr)
-      delete m_dram_directory_cntlr;
+   if (m_gmm_core)
+      delete m_gmm_core;
+
+   if (m_default_policy)
+      delete m_default_policy;
+
+   for (auto& segment: m_segment_table)
+   {
+      if (segment.m_policy)
+         delete segment.m_policy;
+   }
 }
 
 HitWhere::where_t
-MemoryManager::coreInitiateMemoryAccess(
+GlobalMemoryManager::coreInitiateMemoryAccess(
       MemComponent::component_t mem_component,
       Core::lock_signal_t lock_signal,
       Core::mem_op_t mem_op_type,
@@ -425,11 +377,6 @@ MemoryManager::coreInitiateMemoryAccess(
 {
    LOG_ASSERT_ERROR(mem_component <= m_last_level_cache,
       "Error: invalid mem_component (%d) for coreInitiateMemoryAccess", mem_component);
-
-   if (mem_component == MemComponent::L1_ICACHE && m_itlb)
-      accessTLB(m_itlb, address, true, modeled);
-   else if (mem_component == MemComponent::L1_DCACHE && m_dtlb)
-      accessTLB(m_dtlb, address, false, modeled);
 
    return m_cache_cntlrs[mem_component]->processMemOpFromCore(
          lock_signal,
@@ -441,11 +388,131 @@ MemoryManager::coreInitiateMemoryAccess(
 }
 
 void
-MemoryManager::handleMsgFromNetwork(NetPacket& packet)
+GlobalMemoryManager::sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+{
+   sendMsg(msg_type, sender_mem_component, receiver_mem_component, requester, receiver, vaddr, INVALID_ADDRESS, data_buf, data_length, where, perf, thread_num);
+}
+
+void
+GlobalMemoryManager::sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, IntPtr paddr, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+{
+MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, receiver, receiver_mem_component);
+   assert((data_buf == NULL) == (data_length == 0));
+   bool send_magic = msg_type != PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ;
+
+   // bool send_magic = false;
+
+   ShmemMsg shmem_msg(msg_type, sender_mem_component, receiver_mem_component, requester, vaddr, paddr, data_buf, data_length, perf);
+   shmem_msg.setWhere(where);
+
+   Byte* msg_buf = shmem_msg.makeMsgBuf();
+   SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(thread_num);
+   perf->updateTime(msg_time);
+
+   if (m_enabled)
+   {
+      LOG_PRINT("Sending Msg: type(%u), address(0x%x), sender_mem_component(%u), receiver_mem_component(%u), requester(%i), sender(%i), receiver(%i)", msg_type, vaddr, sender_mem_component, receiver_mem_component, requester, getCore()->getId(), receiver);
+   }
+
+   NetPacket packet(msg_time, send_magic ? SLME_MAGIC : SHARED_MEM_1,
+         m_core_id_master, receiver,
+         shmem_msg.getMsgLen(), (const void*) msg_buf);
+   getNetwork()->netSend(packet);
+
+   // Delete the Msg Buf
+   delete [] msg_buf;
+}
+
+void
+GlobalMemoryManager::broadcastMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr vaddr, Byte* data_buf, UInt32 data_length, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+{
+   broadcastMsg(msg_type, sender_mem_component, receiver_mem_component, requester, vaddr, INVALID_ADDRESS, data_buf, data_length, perf, thread_num);
+}
+
+void
+GlobalMemoryManager::broadcastMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr vaddr, IntPtr paddr, Byte* data_buf, UInt32 data_length, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+{
+MYLOG("bcast msg");
+   assert((data_buf == NULL) == (data_length == 0));
+   ShmemMsg shmem_msg(msg_type, sender_mem_component, receiver_mem_component, requester, vaddr, paddr, data_buf, data_length, perf);
+
+   Byte* msg_buf = shmem_msg.makeMsgBuf();
+   SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(thread_num);
+   perf->updateTime(msg_time);
+
+   if (m_enabled)
+   {
+      LOG_PRINT("Sending Msg: type(%u), address(0x%x), sender_mem_component(%u), receiver_mem_component(%u), requester(%i), sender(%i), receiver(%i)", msg_type, vaddr, sender_mem_component, receiver_mem_component, requester, getCore()->getId(), NetPacket::BROADCAST);
+   }
+
+   NetPacket packet(msg_time, SHARED_MEM_1,
+         m_core_id_master, NetPacket::BROADCAST,
+         shmem_msg.getMsgLen(), (const void*) msg_buf);
+   getNetwork()->netSend(packet);
+
+   // Delete the Msg Buf
+   delete [] msg_buf;
+}
+
+SubsecondTime
+GlobalMemoryManager::getCost(MemComponent::component_t mem_component, CachePerfModel::CacheAccess_t access_type)
+{
+   if (mem_component == MemComponent::INVALID_MEM_COMPONENT)
+      return SubsecondTime::Zero();
+
+   return m_cache_perf_models[mem_component]->getLatency(access_type);
+}
+
+void
+GlobalMemoryManager::incrElapsedTime(SubsecondTime latency, ShmemPerfModel::Thread_t thread_num)
+{
+   MYLOG("cycles += %s", itostr(latency).c_str());
+   getShmemPerfModel()->incrElapsedTime(latency, thread_num);
+}
+
+void
+GlobalMemoryManager::incrElapsedTime(MemComponent::component_t mem_component, CachePerfModel::CacheAccess_t access_type, ShmemPerfModel::Thread_t thread_num)
+{
+   incrElapsedTime(getCost(mem_component, access_type), thread_num);
+}
+
+void
+GlobalMemoryManager::enableModels()
+{
+   m_enabled = true;
+
+   for(UInt32 i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
+   {
+      m_cache_cntlrs[(MemComponent::component_t)i]->enable();
+      m_cache_perf_models[(MemComponent::component_t)i]->enable();
+   }
+
+   if (m_dram_cntlr_present)
+      m_dram_cntlr->getDramPerfModel()->enable();
+}
+
+void
+GlobalMemoryManager::disableModels()
+{
+   m_enabled = false;
+
+   for(UInt32 i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
+   {
+      m_cache_cntlrs[(MemComponent::component_t)i]->disable();
+      m_cache_perf_models[(MemComponent::component_t)i]->disable();
+   }
+
+   if (m_dram_cntlr_present)
+      m_dram_cntlr->getDramPerfModel()->disable();
+}
+
+
+void
+GlobalMemoryManager::handleMsgFromNetwork(NetPacket& packet)
 {
 MYLOG("begin");
    core_id_t sender = packet.sender;
-   PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg = PrL1PrL2DramDirectoryMSI::ShmemMsg::getShmemMsg((Byte*) packet.data, &m_dummy_shmem_perf);
+   ShmemMsg* shmem_msg = ShmemMsg::getShmemMsg((Byte*) packet.data, &m_dummy_shmem_perf);
    SubsecondTime msg_time = packet.time;
 
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_SIM_THREAD, msg_time);
@@ -466,8 +533,8 @@ MYLOG("begin");
       case MemComponent::LAST_LEVEL_CACHE:
          switch(sender_mem_component)
          {
-            case MemComponent::TAG_DIR:
-               m_cache_cntlrs[m_last_level_cache]->handleMsgFromDramDirectory(sender, shmem_msg);
+            case MemComponent::GMM:
+               m_cache_cntlrs[m_last_level_cache]->handleMsgFromGMM(sender, shmem_msg);
                break;
 
             default:
@@ -477,17 +544,15 @@ MYLOG("begin");
          }
          break;
 
-      case MemComponent::TAG_DIR:
-         LOG_ASSERT_ERROR(m_tag_directory_present, "Tag directory NOT present");
+      case MemComponent::GMM:
+         LOG_ASSERT_ERROR(m_gmm_present, "GMM NOT present");
 
          switch(sender_mem_component)
          {
             case MemComponent::LAST_LEVEL_CACHE:
-               m_dram_directory_cntlr->handleMsgFromL2Cache(sender, shmem_msg);
-               break;
-
             case MemComponent::DRAM:
-               m_dram_directory_cntlr->handleMsgFromDRAM(sender, shmem_msg);
+            case MemComponent::GMM:
+               m_gmm_core->handleMsgFromNetwork(sender, shmem_msg);
                break;
 
             default:
@@ -502,10 +567,10 @@ MYLOG("begin");
 
          switch(sender_mem_component)
          {
-            case MemComponent::TAG_DIR:
+            case MemComponent::GMM:
             {
                DramCntlrInterface* dram_interface = m_dram_cache ? (DramCntlrInterface*)m_dram_cache : (DramCntlrInterface*)m_dram_cntlr;
-               dram_interface->handleMsgFromTagDirectory(sender, shmem_msg);
+               dram_interface->handleMsgFromGMM(sender, shmem_msg);
                break;
             }
 
@@ -535,142 +600,73 @@ MYLOG("begin");
 MYLOG("end");
 }
 
-void
-MemoryManager::sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr address, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+PolicyBase*
+GlobalMemoryManager::policyLookup(IntPtr address)
 {
-MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, receiver, receiver_mem_component);
-   assert((data_buf == NULL) == (data_length == 0));
-#ifdef SLME_DRAM
-   bool send_magic = msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REQ
-                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ
-                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ
-                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_EX_REP
-                     || msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_SH_REP;
-   if (msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_EX_REP)
-      msg_type = PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REP;
-   else if (msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_SH_REP)
-      msg_type = PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP;
-#else
-   bool send_magic = msg_type != PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ;
-#endif
-
-   PrL1PrL2DramDirectoryMSI::ShmemMsg shmem_msg(msg_type, sender_mem_component, receiver_mem_component, requester, address, data_buf, data_length, perf);
-   shmem_msg.setWhere(where);
-
-   Byte* msg_buf = shmem_msg.makeMsgBuf();
-   SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(thread_num);
-   perf->updateTime(msg_time);
-
-   if (m_enabled)
-   {
-      LOG_PRINT("Sending Msg: type(%u), address(0x%x), sender_mem_component(%u), receiver_mem_component(%u), requester(%i), sender(%i), receiver(%i)", msg_type, address, sender_mem_component, receiver_mem_component, requester, getCore()->getId(), receiver);
-   }
-
-   NetPacket packet(msg_time, send_magic ? SLME_MAGIC : SHARED_MEM_1,
-         m_core_id_master, receiver,
-         shmem_msg.getMsgLen(), (const void*) msg_buf);
-   getNetwork()->netSend(packet);
-
-   // Delete the Msg Buf
-   delete [] msg_buf;
-}
-
-void
-MemoryManager::broadcastMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr address, Byte* data_buf, UInt32 data_length, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
-{
-MYLOG("bcast msg");
-   assert((data_buf == NULL) == (data_length == 0));
-   PrL1PrL2DramDirectoryMSI::ShmemMsg shmem_msg(msg_type, sender_mem_component, receiver_mem_component, requester, address, data_buf, data_length, perf);
-
-   Byte* msg_buf = shmem_msg.makeMsgBuf();
-   SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(thread_num);
-   perf->updateTime(msg_time);
-
-   if (m_enabled)
-   {
-      LOG_PRINT("Sending Msg: type(%u), address(0x%x), sender_mem_component(%u), receiver_mem_component(%u), requester(%i), sender(%i), receiver(%i)", msg_type, address, sender_mem_component, receiver_mem_component, requester, getCore()->getId(), NetPacket::BROADCAST);
-   }
-
-   NetPacket packet(msg_time, SHARED_MEM_1,
-         m_core_id_master, NetPacket::BROADCAST,
-         shmem_msg.getMsgLen(), (const void*) msg_buf);
-   getNetwork()->netSend(packet);
-
-   // Delete the Msg Buf
-   delete [] msg_buf;
-}
-
-void
-MemoryManager::accessTLB(TLB * tlb, IntPtr address, bool isIfetch, Core::MemModeled modeled)
-{
-   bool hit = tlb->lookup(address, getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD));
-   if (hit == false
-       && !(modeled == Core::MEM_MODELED_NONE || modeled == Core::MEM_MODELED_COUNT)
-       && m_tlb_miss_penalty.getLatency() != SubsecondTime::Zero()
-   )
-   {
-      if (m_tlb_miss_parallel)
+   PolicyBase *policy = m_default_policy;
+   m_segment_table_lock.acquire_read();
+   for (const auto& seg : m_segment_table)
+      if (seg.contains(address) && seg.m_policy)
       {
-         incrElapsedTime(m_tlb_miss_penalty.getLatency(), ShmemPerfModel::_USER_THREAD);
+         policy = seg.m_policy;
+         break;
       }
-      else
+
+   m_segment_table_lock.release_read();
+
+   return policy;
+}
+
+void
+GlobalMemoryManager::Command(uint64_t cmd_type, IntPtr start, uint64_t arg1)
+{
+   if (cmd_type == 0)
+      createSegment(start, arg1);
+   else if (cmd_type == 1)
+      segmentAssignPolicy(start, arg1);
+}
+
+void
+GlobalMemoryManager::createSegment(IntPtr start, uint64_t length)
+{
+   if (find(m_core_list_with_gmm.begin(), m_core_list_with_gmm.end(), getCore()->getId()) == m_core_list_with_gmm.end())
+      return;
+
+   Segment new_seg{0, start, start + length, NULL};
+   m_segment_table_lock.acquire();
+
+   for (const auto& seg : m_segment_table)
+      assert(seg != new_seg);
+
+   m_segment_table.push_back(new_seg);
+   m_segment_table_lock.release();
+
+
+   MYLOG("Created segment: %p - %p", (void *)new_seg.m_start, (void *)new_seg.m_end);
+
+}
+
+void
+GlobalMemoryManager::segmentAssignPolicy(IntPtr start, uint64_t policy_id)
+{
+   if (find(m_core_list_with_gmm.begin(), m_core_list_with_gmm.end(), getCore()->getId()) == m_core_list_with_gmm.end())
+      return;
+
+   m_segment_table_lock.acquire();
+   for (auto& seg : m_segment_table)
+   {
+      if (seg.m_start == start)
       {
-         PseudoInstruction *i = new TLBMissInstruction(m_tlb_miss_penalty.getLatency(), isIfetch);
-         getCore()->getPerformanceModel()->queuePseudoInstruction(i);
+         seg.m_policy = new ReplicationPolicy(getCore()->getId(),
+               this,
+               m_dram_controller_home_lookup,
+               1024 * 1024,
+               getShmemPerfModel());
+
+         MYLOG("Segment assign policy: %p - %d", (void *)seg.m_start, policy_id);
       }
    }
-}
-
-SubsecondTime
-MemoryManager::getCost(MemComponent::component_t mem_component, CachePerfModel::CacheAccess_t access_type)
-{
-   if (mem_component == MemComponent::INVALID_MEM_COMPONENT)
-      return SubsecondTime::Zero();
-
-   return m_cache_perf_models[mem_component]->getLatency(access_type);
-}
-
-void
-MemoryManager::incrElapsedTime(SubsecondTime latency, ShmemPerfModel::Thread_t thread_num)
-{
-   MYLOG("cycles += %s", itostr(latency).c_str());
-   getShmemPerfModel()->incrElapsedTime(latency, thread_num);
-}
-
-void
-MemoryManager::incrElapsedTime(MemComponent::component_t mem_component, CachePerfModel::CacheAccess_t access_type, ShmemPerfModel::Thread_t thread_num)
-{
-   incrElapsedTime(getCost(mem_component, access_type), thread_num);
-}
-
-void
-MemoryManager::enableModels()
-{
-   m_enabled = true;
-
-   for(UInt32 i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
-   {
-      m_cache_cntlrs[(MemComponent::component_t)i]->enable();
-      m_cache_perf_models[(MemComponent::component_t)i]->enable();
-   }
-
-   if (m_dram_cntlr_present)
-      m_dram_cntlr->getDramPerfModel()->enable();
-}
-
-void
-MemoryManager::disableModels()
-{
-   m_enabled = false;
-
-   for(UInt32 i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
-   {
-      m_cache_cntlrs[(MemComponent::component_t)i]->disable();
-      m_cache_perf_models[(MemComponent::component_t)i]->disable();
-   }
-
-   if (m_dram_cntlr_present)
-      m_dram_cntlr->getDramPerfModel()->disable();
+   m_segment_table_lock.release();
 }
 
 }

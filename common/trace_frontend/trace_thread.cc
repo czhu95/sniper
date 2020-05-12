@@ -17,6 +17,7 @@
 #include "rng.h"
 #include "routine_tracer.h"
 #include "sim_api.h"
+#include "memory_manager_base.h"
 
 #include "stats.h"
 
@@ -100,6 +101,11 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
       }
    }
 
+   if (Sim()->getCfg()->getString("caching_protocol/type") == "single_level_memory")
+   {
+      m_virt_cache = true;
+      // m_trace.setHandleGMMCmdFunc(TraceThread::__handleGMMCmdFunc, this);
+   }
    thread->setVa2paFunc(_va2pa, (UInt64)this);
 
 }
@@ -123,11 +129,9 @@ UInt64 TraceThread::va2pa(UInt64 va, bool *noMapping)
    if (m_trace_has_pa)
    {
       UInt64 pa = m_trace.va2pa(va);
-      if (pa != 0)
-      {
-         return pa;
-      }
-      else
+      LOG_ASSERT_WARNING(pa, "Cannot translate va: %p, thread id = %d", va, m_thread->getId());
+
+      if (pa == 0)
       {
          if (noMapping)
             *noMapping = true;
@@ -135,6 +139,8 @@ UInt64 TraceThread::va2pa(UInt64 va, bool *noMapping)
          //   LOG_PRINT_WARNING("No mapping found for logical address %lx", va);
          // Fall through to construct an address with our thread id in the upper bits (assume address is private)
       }
+
+      return pa;
    }
 
    UInt64 haddr;
@@ -467,7 +473,7 @@ Instruction* TraceThread::decode(Sift::Instruction &inst)
    else
       instruction = new GenericInstruction(list);
 
-   instruction->setAddress(va2pa(inst.sinst->addr));
+   instruction->setAddress(m_virt_cache ? inst.sinst->addr : va2pa(inst.sinst->addr));
    instruction->setSize(inst.sinst->size);
    instruction->setAtomic(dec_inst.is_atomic());
    char disassembly[64];
@@ -545,7 +551,7 @@ void TraceThread::handleCacheOnlyFunc(uint8_t icount, Sift::CacheOnlyType type, 
       case Sift::CacheOnlyBranchNotTaken:
       {
          bool taken = (type == Sift::CacheOnlyBranchTaken);
-         bool mispredict = core->accessBranchPredictor(va2pa(eip), taken, va2pa(address));
+         bool mispredict = core->accessBranchPredictor(m_virt_cache ? eip : va2pa(eip), taken, m_virt_cache ? address : va2pa(address));
          if (mispredict)
             core->getPerformanceModel()->handleBranchMispredict();
          break;
@@ -556,16 +562,16 @@ void TraceThread::handleCacheOnlyFunc(uint8_t icount, Sift::CacheOnlyType type, 
          core->accessMemory(
                Core::NONE,
                type == Sift::CacheOnlyMemRead ? Core::READ : Core::WRITE,
-               va2pa(address),
+               m_virt_cache ? address : va2pa(address),
                NULL,
                4,
                Core::MEM_MODELED_COUNT,
-               va2pa(eip));
+               m_virt_cache ? eip : va2pa(eip));
          break;
 
       case Sift::CacheOnlyMemIcache:
          if (Sim()->getConfig()->getEnableICacheModeling())
-            core->readInstructionMemory(va2pa(eip), address);
+            core->readInstructionMemory(m_virt_cache ? eip : va2pa(eip), address);
          break;
    }
 }
@@ -589,14 +595,14 @@ void TraceThread::handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruc
 
    if (do_icache_warmup && Sim()->getConfig()->getEnableICacheModeling())
    {
-      core->readInstructionMemory(va2pa(icache_warmup_addr), icache_warmup_size);
+      core->readInstructionMemory(m_virt_cache ? icache_warmup_addr : va2pa(icache_warmup_addr), icache_warmup_size);
    }
 
    // Warmup branch predictor
 
    if (inst.is_branch)
    {
-      bool mispredict = core->accessBranchPredictor(va2pa(inst.sinst->addr), inst.taken, va2pa(next_inst.sinst->addr));
+      bool mispredict = core->accessBranchPredictor(m_virt_cache ? inst.sinst->addr : va2pa(inst.sinst->addr), inst.taken, m_virt_cache ? next_inst.sinst->addr : va2pa(next_inst.sinst->addr));
       if (mispredict)
          core->getPerformanceModel()->handleBranchMispredict();
    }
@@ -631,7 +637,7 @@ void TraceThread::handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruc
                }
 
                bool no_mapping = false;
-               UInt64 pa = va2pa(mem_address, is_prefetch ? &no_mapping : NULL);
+               UInt64 pa = m_virt_cache ? mem_address : va2pa(mem_address, is_prefetch ? &no_mapping : NULL);
                if (no_mapping)
                   continue;
 
@@ -642,7 +648,7 @@ void TraceThread::handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruc
                      NULL,
                      Sim()->getDecoder()->size_mem_op(&dec_inst, mem_idx),
                      Core::MEM_MODELED_COUNT,
-                     va2pa(inst.sinst->addr));
+                     m_virt_cache ? inst.sinst->addr : va2pa(inst.sinst->addr));
             }
          }
 
@@ -666,12 +672,12 @@ void TraceThread::handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruc
                }
 
                bool no_mapping = false;
-               UInt64 pa = va2pa(mem_address, is_prefetch ? &no_mapping : NULL);
+               UInt64 pa = m_virt_cache ? mem_address : va2pa(mem_address, is_prefetch ? &no_mapping : NULL);
                if (no_mapping)
                   continue;
 
                if (is_atomic_update)
-                  core->logMemoryHit(false, Core::WRITE, pa, Core::MEM_MODELED_COUNT, va2pa(inst.sinst->addr));
+                  core->logMemoryHit(false, Core::WRITE, pa, Core::MEM_MODELED_COUNT, m_virt_cache ? inst.sinst->addr : va2pa(inst.sinst->addr));
                else
                   core->accessMemory(
                         /*(is_atomic_update) ? Core::UNLOCK :*/ Core::NONE,
@@ -680,7 +686,7 @@ void TraceThread::handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruc
                         NULL,
                         Sim()->getDecoder()->size_mem_op(&dec_inst, mem_idx),
                         Core::MEM_MODELED_COUNT,
-                        va2pa(inst.sinst->addr));
+                        m_virt_cache ? inst.sinst->addr : va2pa(inst.sinst->addr));
             }
          }
       }
@@ -725,13 +731,13 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
    const dl::DecodedInst &dec_inst = *(m_decoder_cache[inst.sinst->addr]);
 
    Instruction *ins = m_icache[inst.sinst->addr];
-   DynamicInstruction *dynins = prfmdl->createDynamicInstruction(ins, va2pa(inst.sinst->addr));
+   DynamicInstruction *dynins = prfmdl->createDynamicInstruction(ins, m_virt_cache ? inst.sinst->addr : va2pa(inst.sinst->addr));
 
    // Add dynamic instruction info
 
    if (inst.is_branch)
    {
-      dynins->addBranch(inst.taken, va2pa(next_inst.sinst->addr));
+      dynins->addBranch(inst.taken, m_virt_cache ? next_inst.sinst->addr : va2pa(next_inst.sinst->addr));
    }
 
    // Ignore memory-referencing operands in NOP instructions
@@ -795,7 +801,8 @@ void TraceThread::addDetailedMemoryInfo(DynamicInstruction *dynins, Sift::Instru
    }
 
    bool no_mapping = false;
-   UInt64 pa = va2pa(mem_address, is_prefetch ? &no_mapping : NULL);
+   UInt64 mem_addr = m_virt_cache ? mem_address :
+                        va2pa(mem_address, is_prefetch ? &no_mapping : NULL);
 
    if (no_mapping)
    {
@@ -813,7 +820,7 @@ void TraceThread::addDetailedMemoryInfo(DynamicInstruction *dynins, Sift::Instru
       dynins->addMemory(
          inst.executed,
          SubsecondTime::Zero(),
-         pa,
+         mem_addr,
          Sim()->getDecoder()->size_mem_op(&decoded_inst, mem_idx),
          op_type,
          0,
@@ -1016,4 +1023,12 @@ void TraceThread::handleAccessMemory(Core::lock_signal_t lock_signal, Core::mem_
    }
 
    m_trace.AccessMemory(sift_lock_signal, sift_mem_op, d_addr, (uint8_t*)data_buffer, data_size);
+}
+
+void TraceThread::handleGMMCmdFunc(uint64_t cmd, IntPtr start, uint64_t arg1)
+{
+   for (core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); core_id ++)
+   {
+      Sim()->getCoreManager()->getCoreFromID(core_id)->getMemoryManager()->Command(cmd, start, arg1);
+   }
 }

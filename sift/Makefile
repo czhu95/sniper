@@ -43,8 +43,7 @@ $(TARGET) : $(OBJECTS)
 
 siftdump : siftdump.o $(TARGET)
 	$(_MSG) '[CXX   ]' $(subst $(shell readlink -f $(SIM_ROOT))/,,$(shell readlink -f $@))
-	$(_CMD) $(CXX) $(CXXFLAGS_ARCH) -o $@ $^ -L. -lsift -lz
-	#$(_CMD) $(CXX) $(CXXFLAGS_ARCH) -o $@ $^ -L$(XED_HOME)/lib -L. -lsift -lxed -lz
+	$(_CMD) $(CXX) $(CXXFLAGS_ARCH) -o $@ $^ -L. -lsift -lpthread -lz
 
 recorder : $(TARGET)
 	@$(MAKE) $(MAKE_QUIET) -C recorder

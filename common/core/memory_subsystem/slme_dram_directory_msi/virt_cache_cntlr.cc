@@ -1,6 +1,6 @@
-#include "cache_cntlr.h"
+#include "virt_cache_cntlr.h"
 #include "log.h"
-#include "memory_manager.h"
+#include "global_memory_manager.h"
 #include "core_manager.h"
 #include "simulator.h"
 #include "subsecond_time.h"
@@ -9,6 +9,8 @@
 #include "hooks_manager.h"
 #include "cache_atd.h"
 #include "shmem_perf.h"
+#include "thread.h"
+#include "../pr_l1_pr_l2_dram_directory_msi/shmem_msg.h"
 
 #include <cstring>
 
@@ -16,24 +18,28 @@
 // Works in most cases, but seems to have some more bugs or race conditions, preventing it from being ready for prime time.
 //#define PRIVATE_L2_OPTIMIZATION
 
-Lock iolock;
+extern Lock iolock;
 #if 0
-#  define LOCKED(...) { ScopedLock sl(iolock); fflush(stderr); __VA_ARGS__; fflush(stderr); }
-#  define LOGID() fprintf(stderr, "[%s] %2u%c [ %2d(%2d)-L%u%c ] %-25s@%3u: ", \
+#  define LOCKED(...) { ScopedLock sl(iolock); fflush(stdout); __VA_ARGS__; fflush(stdout); }
+#  define LOGID() fprintf(stdout, "[%s] %2u%c [ %2d(%2d)-L%u%c ] %-25s@%3u: ", \
                      itostr(getShmemPerfModel()->getElapsedTime(Sim()->getCoreManager()->amiUserThread() ? ShmemPerfModel::_USER_THREAD : ShmemPerfModel::_SIM_THREAD)).c_str(), Sim()->getCoreManager()->getCurrentCoreID(), \
                      Sim()->getCoreManager()->amiUserThread() ? '^' : '_', \
                      m_core_id_master, m_core_id, m_mem_component < MemComponent::L2_CACHE ? 1 : m_mem_component - MemComponent::L2_CACHE + 2, \
                      m_mem_component == MemComponent::L1_ICACHE ? 'I' : (m_mem_component == MemComponent::L1_DCACHE  ? 'D' : ' '),  \
                      __FUNCTION__, __LINE__ \
                   );
-#  define MYLOG(...) LOCKED(LOGID(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");)
-#  define DUMPDATA(data_buf, data_length) { for(UInt32 i = 0; i < data_length; ++i) fprintf(stderr, "%02x ", data_buf[i]); }
+#  define MYLOG(...) LOCKED(LOGID(); fprintf(stdout, __VA_ARGS__); fprintf(stdout, "\n");)
+#  define DUMPDATA(data_buf, data_length) { for(UInt32 i = 0; i < data_length; ++i) fprintf(stdout, "%02x ", data_buf[i]); }
 #else
 #  define MYLOG(...) {}
 #endif
 
-namespace ParametricDramDirectoryMSI
+namespace SingleLevelMemory
 {
+
+using ParametricDramDirectoryMSI::Transition;
+using ParametricDramDirectoryMSI::Prefetch;
+using ParametricDramDirectoryMSI::CacheParameters;
 
 char CStateString(CacheState::cstate_t cstate) {
    switch(cstate)
@@ -121,10 +127,10 @@ CacheMasterCntlr::~CacheMasterCntlr()
    }
 }
 
-CacheCntlr::CacheCntlr(MemComponent::component_t mem_component,
+VirtCacheCntlr::VirtCacheCntlr(MemComponent::component_t mem_component,
       String name,
       core_id_t core_id,
-      MemoryManager* memory_manager,
+      GlobalMemoryManager* memory_manager,
       AddressHomeLookup* tag_directory_home_lookup,
       Semaphore* user_thread_sem,
       Semaphore* network_thread_sem,
@@ -272,7 +278,7 @@ CacheCntlr::CacheCntlr(MemComponent::component_t mem_component,
    }
 }
 
-CacheCntlr::~CacheCntlr()
+VirtCacheCntlr::~VirtCacheCntlr()
 {
    if (isMasterCache())
    {
@@ -290,7 +296,7 @@ CacheCntlr::~CacheCntlr()
 }
 
 void
-CacheCntlr::setPrevCacheCntlrs(CacheCntlrList& prev_cache_cntlrs)
+VirtCacheCntlr::setPrevCacheCntlrs(CacheCntlrList& prev_cache_cntlrs)
 {
    /* Append our prev_caches list to the master one (only master nodes) */
    for(CacheCntlrList::iterator it = prev_cache_cntlrs.begin(); it != prev_cache_cntlrs.end(); it++)
@@ -302,7 +308,7 @@ CacheCntlr::setPrevCacheCntlrs(CacheCntlrList& prev_cache_cntlrs)
 }
 
 void
-CacheCntlr::setDRAMDirectAccess(DramCntlrInterface* dram_cntlr, UInt64 num_outstanding)
+VirtCacheCntlr::setDRAMDirectAccess(DramCntlrInterface* dram_cntlr, UInt64 num_outstanding)
 {
    m_master->m_dram_cntlr = dram_cntlr;
    m_master->m_dram_outstanding_writebacks = new ContentionModel("llc-evict-queue", m_core_id, num_outstanding);
@@ -314,7 +320,7 @@ CacheCntlr::setDRAMDirectAccess(DramCntlrInterface* dram_cntlr, UInt64 num_outst
  *****************************************************************************/
 
 HitWhere::where_t
-CacheCntlr::processMemOpFromCore(
+VirtCacheCntlr::processMemOpFromCore(
       Core::lock_signal_t lock_signal,
       Core::mem_op_t mem_op_type,
       IntPtr ca_address, UInt32 offset,
@@ -610,7 +616,7 @@ MYLOG("access done");
 
 
 void
-CacheCntlr::updateHits(Core::mem_op_t mem_op_type, UInt64 hits)
+VirtCacheCntlr::updateHits(Core::mem_op_t mem_op_type, UInt64 hits)
 {
    ScopedLock sl(getLock());
 
@@ -624,7 +630,7 @@ CacheCntlr::updateHits(Core::mem_op_t mem_op_type, UInt64 hits)
 
 
 void
-CacheCntlr::copyDataFromNextLevel(Core::mem_op_t mem_op_type, IntPtr address, bool modeled, SubsecondTime t_now)
+VirtCacheCntlr::copyDataFromNextLevel(Core::mem_op_t mem_op_type, IntPtr address, bool modeled, SubsecondTime t_now)
 {
    // TODO: what if it's already gone? someone else may invalitate it between the time it arrived an when we get here...
    LOG_ASSERT_ERROR(m_next_cache_cntlr->operationPermissibleinCache(address, mem_op_type),
@@ -664,7 +670,7 @@ MYLOG("copyDataFromNextLevel l%d", m_mem_component);
 
 
 void
-CacheCntlr::trainPrefetcher(IntPtr address, bool cache_hit, bool prefetch_hit, SubsecondTime t_issue)
+VirtCacheCntlr::trainPrefetcher(IntPtr address, bool cache_hit, bool prefetch_hit, SubsecondTime t_issue)
 {
    ScopedLock sl(getLock());
 
@@ -690,7 +696,7 @@ CacheCntlr::trainPrefetcher(IntPtr address, bool cache_hit, bool prefetch_hit, S
 }
 
 void
-CacheCntlr::Prefetch(SubsecondTime t_now)
+VirtCacheCntlr::Prefetch(SubsecondTime t_now)
 {
    IntPtr address_to_prefetch = INVALID_ADDRESS;
 
@@ -727,7 +733,7 @@ CacheCntlr::Prefetch(SubsecondTime t_now)
 }
 
 void
-CacheCntlr::doPrefetch(IntPtr prefetch_address, SubsecondTime t_start)
+VirtCacheCntlr::doPrefetch(IntPtr prefetch_address, SubsecondTime t_start)
 {
    ++stats.prefetches;
    acquireStackLock(prefetch_address);
@@ -759,7 +765,7 @@ CacheCntlr::doPrefetch(IntPtr prefetch_address, SubsecondTime t_start)
  *****************************************************************************/
 
 HitWhere::where_t
-CacheCntlr::processShmemReqFromPrevCache(CacheCntlr* requester, Core::mem_op_t mem_op_type, IntPtr address, bool modeled, bool count, Prefetch::prefetch_type_t isPrefetch, SubsecondTime t_issue, bool have_write_lock)
+VirtCacheCntlr::processShmemReqFromPrevCache(VirtCacheCntlr* requester, Core::mem_op_t mem_op_type, IntPtr address, bool modeled, bool count, Prefetch::prefetch_type_t isPrefetch, SubsecondTime t_issue, bool have_write_lock)
 {
    #ifdef PRIVATE_L2_OPTIMIZATION
    bool have_write_lock_internal = have_write_lock;
@@ -1031,7 +1037,7 @@ CacheCntlr::processShmemReqFromPrevCache(CacheCntlr* requester, Core::mem_op_t m
 }
 
 void
-CacheCntlr::notifyPrevLevelInsert(core_id_t core_id, MemComponent::component_t mem_component, IntPtr address)
+VirtCacheCntlr::notifyPrevLevelInsert(core_id_t core_id, MemComponent::component_t mem_component, IntPtr address)
 {
    #ifdef ENABLE_TRACK_SHARING_PREVCACHES
    CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
@@ -1042,7 +1048,7 @@ CacheCntlr::notifyPrevLevelInsert(core_id_t core_id, MemComponent::component_t m
 }
 
 void
-CacheCntlr::notifyPrevLevelEvict(core_id_t core_id, MemComponent::component_t mem_component, IntPtr address)
+VirtCacheCntlr::notifyPrevLevelEvict(core_id_t core_id, MemComponent::component_t mem_component, IntPtr address)
 {
 MYLOG("@%lx", address);
    if (m_master->m_evicting_buf && address == m_master->m_evicting_address) {
@@ -1059,7 +1065,7 @@ MYLOG("here in state %c", CStateString(getCacheState(address)));
 }
 
 void
-CacheCntlr::updateUsageBits(IntPtr address, CacheBlockInfo::BitsUsedType used)
+VirtCacheCntlr::updateUsageBits(IntPtr address, CacheBlockInfo::BitsUsedType used)
 {
    bool new_bits;
    {
@@ -1074,7 +1080,7 @@ CacheCntlr::updateUsageBits(IntPtr address, CacheBlockInfo::BitsUsedType used)
 }
 
 void
-CacheCntlr::walkUsageBits()
+VirtCacheCntlr::walkUsageBits()
 {
    if (!m_next_cache_cntlr && Sim()->getConfig()->hasCacheEfficiencyCallbacks())
    {
@@ -1093,7 +1099,7 @@ CacheCntlr::walkUsageBits()
 }
 
 boost::tuple<HitWhere::where_t, SubsecondTime>
-CacheCntlr::accessDRAM(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefetch, Byte* data_buf)
+VirtCacheCntlr::accessDRAM(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefetch, Byte* data_buf)
 {
    ScopedLock sl(getLock()); // DRAM is shared and owned by m_master
 
@@ -1120,7 +1126,7 @@ CacheCntlr::accessDRAM(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefet
 }
 
 void
-CacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefetch, SubsecondTime t_issue)
+VirtCacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefetch, SubsecondTime t_issue)
 {
    bool exclusive = false;
 
@@ -1178,10 +1184,10 @@ CacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr address, 
 }
 
 void
-CacheCntlr::processExReqToDirectory(IntPtr address)
+VirtCacheCntlr::processExReqToDirectory(IntPtr address)
 {
    // We need to send a request to the Dram Directory Cache
-   MYLOG("EX REQ>%d @ %lx", getHome(address) ,address);
+   MYLOG("EX REQ>%d @ %lx", m_core_id_master ,address);
 
    CacheState::cstate_t cstate = getCacheState(address);
 
@@ -1189,42 +1195,47 @@ CacheCntlr::processExReqToDirectory(IntPtr address)
    assert((cstate == CacheState::INVALID));
 
    getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REQ,
-         MemComponent::LAST_LEVEL_CACHE, MemComponent::TAG_DIR,
+         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
          m_core_id_master /* requester */,
-         getHome(address) /* receiver */,
+         m_core_id_master /* receiver */,
          address,
+         Sim()->getThreadManager()->getThreadFromID(m_core_id)->va2pa(address),
          NULL, 0,
          HitWhere::UNKNOWN, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
 }
 
 void
-CacheCntlr::processUpgradeReqToDirectory(IntPtr address, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+VirtCacheCntlr::processUpgradeReqToDirectory(IntPtr address, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
    // We need to send a request to the Dram Directory Cache
    MYLOG("UPGR REQ @ %lx", address);
 
-   CacheState::cstate_t cstate = getCacheState(address);
+   CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+   CacheState::cstate_t cstate = getCacheState(cache_block_info);
    assert(cstate == CacheState::SHARED);
    setCacheState(address, CacheState::SHARED_UPGRADING);
 
+   core_id_t owner = cache_block_info->getOwner();
    getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ,
-         MemComponent::LAST_LEVEL_CACHE, MemComponent::TAG_DIR,
+         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
          m_core_id_master /* requester */,
-         getHome(address) /* receiver */,
+         m_core_id_master /* receiver */,
          address,
+         Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(address),
          NULL, 0,
          HitWhere::UNKNOWN, perf, thread_num);
 }
 
 void
-CacheCntlr::processShReqToDirectory(IntPtr address)
+VirtCacheCntlr::processShReqToDirectory(IntPtr address)
 {
 MYLOG("SH REQ @ %lx", address);
    getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ,
-         MemComponent::LAST_LEVEL_CACHE, MemComponent::TAG_DIR,
+         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
          m_core_id_master /* requester */,
-         getHome(address) /* receiver */,
+         m_core_id_master /* receiver */,
          address,
+         Sim()->getThreadManager()->getThreadFromID(m_core_id)->va2pa(address),
          NULL, 0,
          HitWhere::UNKNOWN, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
 }
@@ -1239,7 +1250,7 @@ MYLOG("SH REQ @ %lx", address);
  *****************************************************************************/
 
 bool
-CacheCntlr::operationPermissibleinCache(
+VirtCacheCntlr::operationPermissibleinCache(
       IntPtr address, Core::mem_op_t mem_op_type, CacheBlockInfo **cache_block_info)
 {
    CacheBlockInfo *block_info = getCacheBlockInfo(address);
@@ -1271,7 +1282,7 @@ CacheCntlr::operationPermissibleinCache(
 
 
 void
-CacheCntlr::accessCache(
+VirtCacheCntlr::accessCache(
       Core::mem_op_t mem_op_type, IntPtr ca_address, UInt32 offset,
       Byte* data_buf, UInt32 data_length, bool update_replacement)
 {
@@ -1311,26 +1322,26 @@ MYLOG("writethrough done");
  *****************************************************************************/
 
 CacheBlockInfo*
-CacheCntlr::getCacheBlockInfo(IntPtr address)
+VirtCacheCntlr::getCacheBlockInfo(IntPtr address)
 {
    return (CacheBlockInfo*) m_master->m_cache->peekSingleLine(address);
 }
 
 CacheState::cstate_t
-CacheCntlr::getCacheState(IntPtr address)
+VirtCacheCntlr::getCacheState(IntPtr address)
 {
    CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
    return getCacheState(cache_block_info);
 }
 
 CacheState::cstate_t
-CacheCntlr::getCacheState(CacheBlockInfo *cache_block_info)
+VirtCacheCntlr::getCacheState(CacheBlockInfo *cache_block_info)
 {
    return (cache_block_info == NULL) ? CacheState::INVALID : cache_block_info->getCState();
 }
 
 CacheBlockInfo*
-CacheCntlr::setCacheState(IntPtr address, CacheState::cstate_t cstate)
+VirtCacheCntlr::setCacheState(IntPtr address, CacheState::cstate_t cstate)
 {
    CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
    cache_block_info->setCState(cstate);
@@ -1338,7 +1349,7 @@ CacheCntlr::setCacheState(IntPtr address, CacheState::cstate_t cstate)
 }
 
 void
-CacheCntlr::invalidateCacheBlock(IntPtr address)
+VirtCacheCntlr::invalidateCacheBlock(IntPtr address)
 {
    __attribute__((unused)) CacheState::cstate_t old_cstate = getCacheState(address);
    assert(old_cstate != CacheState::MODIFIED);
@@ -1353,7 +1364,7 @@ CacheCntlr::invalidateCacheBlock(IntPtr address)
 }
 
 void
-CacheCntlr::retrieveCacheBlock(IntPtr address, Byte* data_buf, ShmemPerfModel::Thread_t thread_num, bool update_replacement)
+VirtCacheCntlr::retrieveCacheBlock(IntPtr address, Byte* data_buf, ShmemPerfModel::Thread_t thread_num, bool update_replacement)
 {
    __attribute__((unused)) CacheBlockInfo* cache_block_info = (CacheBlockInfo*) m_master->m_cache->accessSingleLine(
       address, Cache::LOAD, data_buf, getCacheBlockSize(), getShmemPerfModel()->getElapsedTime(thread_num), update_replacement);
@@ -1366,7 +1377,7 @@ CacheCntlr::retrieveCacheBlock(IntPtr address, Byte* data_buf, ShmemPerfModel::T
  *****************************************************************************/
 
 CacheBlockInfo*
-CacheCntlr::insertCacheBlock(IntPtr address, CacheState::cstate_t cstate, Byte* data_buf, core_id_t requester, ShmemPerfModel::Thread_t thread_num)
+VirtCacheCntlr::insertCacheBlock(IntPtr address, CacheState::cstate_t cstate, Byte* data_buf, core_id_t requester, ShmemPerfModel::Thread_t thread_num)
 {
 MYLOG("insertCacheBlock l%d @ %lx as %c (now %c)", m_mem_component, address, CStateString(cstate), CStateString(getCacheState(address)));
    bool eviction;
@@ -1384,8 +1395,8 @@ MYLOG("insertCacheBlock l%d @ %lx as %c (now %c)", m_mem_component, address, CSt
    if (Sim()->getInstrumentationMode() == InstMode::CACHE_ONLY)
       cache_block_info->setOption(CacheBlockInfo::WARMUP);
 
-   if (Sim()->getConfig()->hasCacheEfficiencyCallbacks())
-      cache_block_info->setOwner(Sim()->getConfig()->getCacheEfficiencyCallbacks().call_get_owner(requester, address));
+   // if (Sim()->getConfig()->hasCacheEfficiencyCallbacks())
+   cache_block_info->setOwner(requester);
 
    if (m_next_cache_cntlr && !m_perfect)
       m_next_cache_cntlr->notifyPrevLevelInsert(m_core_id_master, m_mem_component, address);
@@ -1396,14 +1407,14 @@ MYLOG("insertCacheBlock l%d local done", m_mem_component);
    {
 MYLOG("evicting @%lx", evict_address);
 
-      if (
-         !m_next_cache_cntlr // Track at LLC
-         && !evict_block_info.hasOption(CacheBlockInfo::WARMUP) // Ignore blocks allocated during warmup (we don't track usage then)
-         && Sim()->getConfig()->hasCacheEfficiencyCallbacks()
-      )
-      {
-         Sim()->getConfig()->getCacheEfficiencyCallbacks().call_notify_evict(false, evict_block_info.getOwner(), cache_block_info->getOwner(), evict_block_info.getUsage(), getCacheBlockSize() >> CacheBlockInfo::BitsUsedOffset);
-      }
+      // if (
+      //    !m_next_cache_cntlr // Track at LLC
+      //    && !evict_block_info.hasOption(CacheBlockInfo::WARMUP) // Ignore blocks allocated during warmup (we don't track usage then)
+      //    && Sim()->getConfig()->hasCacheEfficiencyCallbacks()
+      // )
+      // {
+      //    Sim()->getConfig()->getCacheEfficiencyCallbacks().call_notify_evict(false, evict_block_info.getOwner(), cache_block_info->getOwner(), evict_block_info.getUsage(), getCacheBlockSize() >> CacheBlockInfo::BitsUsedOffset);
+      // }
 
       CacheState::cstate_t old_state = evict_block_info.getCState();
       MYLOG("evicting @%lx (state %c)", evict_address, CStateString(old_state));
@@ -1498,8 +1509,9 @@ MYLOG("evicting @%lx", evict_address);
       else
       {
          /* Send dirty block to directory */
-         UInt32 home_node_id = getHome(evict_address);
+         UInt32 home_node_id = m_core_id_master;
          SubsecondTime slme_available = evict_block_info.getSLMeAvailable();
+         core_id_t owner = evict_block_info.getOwner();
          if (thread_num == ShmemPerfModel::_SIM_THREAD && slme_available != SubsecondTime::MaxTime())
          {
             getShmemPerfModel()->rewindElapsedTime(slme_available, ShmemPerfModel::_SIM_THREAD);
@@ -1510,10 +1522,11 @@ MYLOG("evicting @%lx", evict_address);
             // Send back the data also
 MYLOG("evict FLUSH %lx", evict_address);
             getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::FLUSH_REP,
-                  MemComponent::LAST_LEVEL_CACHE, MemComponent::TAG_DIR,
+                  MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
                   m_core_id /* requester */,
                   home_node_id /* receiver */,
                   evict_address,
+                  Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(evict_address),
                   evict_buf, getCacheBlockSize(),
                   HitWhere::UNKNOWN, &m_dummy_shmem_perf, thread_num);
          }
@@ -1524,10 +1537,11 @@ MYLOG("evict INV %lx", evict_address);
                   "evict_address(0x%x), evict_state(%u)",
                   evict_address, evict_block_info.getCState());
             getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REP,
-                  MemComponent::LAST_LEVEL_CACHE, MemComponent::TAG_DIR,
+                  MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
                   m_core_id /* requester */,
                   home_node_id /* receiver */,
                   evict_address,
+                  Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(evict_address),
                   NULL, 0,
                   HitWhere::UNKNOWN, &m_dummy_shmem_perf, thread_num);
          }
@@ -1542,7 +1556,7 @@ MYLOG("evict INV %lx", evict_address);
 }
 
 std::pair<SubsecondTime, bool>
-CacheCntlr::updateCacheBlock(IntPtr address, CacheState::cstate_t new_cstate, Transition::reason_t reason, Byte* out_buf, ShmemPerfModel::Thread_t thread_num)
+VirtCacheCntlr::updateCacheBlock(IntPtr address, CacheState::cstate_t new_cstate, Transition::reason_t reason, Byte* out_buf, ShmemPerfModel::Thread_t thread_num)
 {
    MYLOG("updateCacheBlock");
    LOG_ASSERT_ERROR(new_cstate < CacheState::NUM_CSTATE_STATES, "Invalid new cstate %u", new_cstate);
@@ -1713,7 +1727,7 @@ CacheCntlr::updateCacheBlock(IntPtr address, CacheState::cstate_t new_cstate, Tr
 }
 
 void
-CacheCntlr::writeCacheBlock(IntPtr address, UInt32 offset, Byte* data_buf, UInt32 data_length, ShmemPerfModel::Thread_t thread_num,
+VirtCacheCntlr::writeCacheBlock(IntPtr address, UInt32 offset, Byte* data_buf, UInt32 data_length, ShmemPerfModel::Thread_t thread_num,
                             SubsecondTime slme_available)
 {
 MYLOG(" ");
@@ -1742,7 +1756,7 @@ assert(data_length==getCacheBlockSize());
 }
 
 bool
-CacheCntlr::isInLowerLevelCache(CacheBlockInfo *block_info)
+VirtCacheCntlr::isInLowerLevelCache(CacheBlockInfo *block_info)
 {
    IntPtr address = m_master->m_cache->tagToAddress(block_info->getTag());
    for(CacheCntlrList::iterator it = m_master->m_prev_cache_cntlrs.begin(); it != m_master->m_prev_cache_cntlrs.end(); it++)
@@ -1756,7 +1770,7 @@ CacheCntlr::isInLowerLevelCache(CacheBlockInfo *block_info)
 }
 
 void
-CacheCntlr::incrementQBSLookupCost()
+VirtCacheCntlr::incrementQBSLookupCost()
 {
    SubsecondTime latency = m_writeback_time.getLatency();
    getMemoryManager()->incrElapsedTime(latency, ShmemPerfModel::_USER_THREAD);
@@ -1769,8 +1783,8 @@ CacheCntlr::incrementQBSLookupCost()
  *****************************************************************************/
 
 void
-CacheCntlr::handleMsgFromDramDirectory(
-      core_id_t sender, PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg)
+VirtCacheCntlr::handleMsgFromGMM(
+      core_id_t sender, ShmemMsg* shmem_msg)
 {
    PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
    IntPtr address = shmem_msg->getAddress();
@@ -1884,7 +1898,7 @@ MYLOG("done");
 }
 
 void
-CacheCntlr::processExRepFromDramDirectory(core_id_t sender, core_id_t requester, PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg)
+VirtCacheCntlr::processExRepFromDramDirectory(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
 {
    // Forward data from message to LLC, don't incur LLC data access time (writeback will be done asynchronously)
    //getMemoryManager()->incrElapsedTime(m_mem_component, CachePerfModel::ACCESS_CACHE_DATA_AND_TAGS);
@@ -1898,7 +1912,7 @@ MYLOG("processExRepFromDramDirectory l%d end", m_mem_component);
 }
 
 void
-CacheCntlr::processShRepFromDramDirectory(core_id_t sender, core_id_t requester, PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg)
+VirtCacheCntlr::processShRepFromDramDirectory(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
 {
    // Forward data from message to LLC, don't incur LLC data access time (writeback will be done asynchronously)
    //getMemoryManager()->incrElapsedTime(m_mem_component, CachePerfModel::ACCESS_CACHE_DATA_AND_TAGS);
@@ -1912,7 +1926,7 @@ MYLOG("processShRepFromDramDirectory l%d", m_mem_component);
 }
 
 void
-CacheCntlr::processUpgradeRepFromDramDirectory(core_id_t sender, core_id_t requester, PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg)
+VirtCacheCntlr::processUpgradeRepFromDramDirectory(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
 {
 MYLOG("processShRepFromDramDirectory l%d", m_mem_component);
    // We now have the only copy. Change to a writeable state.
@@ -1944,7 +1958,7 @@ MYLOG("processShRepFromDramDirectory l%d", m_mem_component);
 }
 
 void
-CacheCntlr::processInvReqFromDramDirectory(core_id_t sender, PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg)
+VirtCacheCntlr::processInvReqFromDramDirectory(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
 MYLOG("processInvReqFromDramDirectory l%d", m_mem_component);
@@ -1967,10 +1981,11 @@ MYLOG("processInvReqFromDramDirectory l%d", m_mem_component);
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), ShmemPerf::REMOTE_CACHE_INV);
 
       getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REP,
-            MemComponent::LAST_LEVEL_CACHE, MemComponent::TAG_DIR,
+            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
             address,
+            shmem_msg->getPhysAddress(),
             NULL, 0,
             HitWhere::UNKNOWN, shmem_msg->getPerf(), ShmemPerfModel::_SIM_THREAD);
    }
@@ -1983,7 +1998,7 @@ MYLOG("invalid @ %lx, hoping eviction message is underway", address);
 }
 
 void
-CacheCntlr::processFlushReqFromDramDirectory(core_id_t sender, PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg)
+VirtCacheCntlr::processFlushReqFromDramDirectory(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
 MYLOG("processFlushReqFromDramDirectory l%d", m_mem_component);
@@ -2004,10 +2019,11 @@ MYLOG("processFlushReqFromDramDirectory l%d", m_mem_component);
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), ShmemPerf::REMOTE_CACHE_WB);
 
       getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::FLUSH_REP,
-            MemComponent::LAST_LEVEL_CACHE, MemComponent::TAG_DIR,
+            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
             address,
+            shmem_msg->getPhysAddress(),
             data_buf, getCacheBlockSize(),
             HitWhere::UNKNOWN, shmem_msg->getPerf(), ShmemPerfModel::_SIM_THREAD);
    }
@@ -2020,7 +2036,7 @@ MYLOG("invalid @ %lx, hoping eviction message is underway", address);
 }
 
 void
-CacheCntlr::processWbReqFromDramDirectory(core_id_t sender, PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg)
+VirtCacheCntlr::processWbReqFromDramDirectory(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
 MYLOG("processWbReqFromDramDirectory l%d", m_mem_component);
@@ -2044,10 +2060,11 @@ MYLOG("processWbReqFromDramDirectory l%d", m_mem_component);
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), ShmemPerf::REMOTE_CACHE_FWD);
 
       getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::WB_REP,
-            MemComponent::LAST_LEVEL_CACHE, MemComponent::TAG_DIR,
+            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
             address,
+            shmem_msg->getPhysAddress(),
             data_buf, getCacheBlockSize(),
             HitWhere::UNKNOWN, shmem_msg->getPerf(), ShmemPerfModel::_SIM_THREAD);
    }
@@ -2067,7 +2084,7 @@ MYLOG("invalid @ %lx, hoping eviction message is underway", address);
  *****************************************************************************/
 
 void
-CacheCntlr::updateCounters(Core::mem_op_t mem_op_type, IntPtr address, bool cache_hit, CacheState::cstate_t state, Prefetch::prefetch_type_t isPrefetch)
+VirtCacheCntlr::updateCounters(Core::mem_op_t mem_op_type, IntPtr address, bool cache_hit, CacheState::cstate_t state, Prefetch::prefetch_type_t isPrefetch)
 {
    /* If another miss to this cache line is still in progress:
       operationPermissibleinCache() will think it's a hit (so cache_hit == true) since the processing
@@ -2123,7 +2140,7 @@ CacheCntlr::updateCounters(Core::mem_op_t mem_op_type, IntPtr address, bool cach
 }
 
 void
-CacheCntlr::cleanupMshr()
+VirtCacheCntlr::cleanupMshr()
 {
    /* Keep only last 8 MSHR entries */
    while(m_master->mshr.size() > 8) {
@@ -2140,7 +2157,7 @@ CacheCntlr::cleanupMshr()
 }
 
 void
-CacheCntlr::transition(IntPtr address, Transition::reason_t reason, CacheState::cstate_t old_state, CacheState::cstate_t new_state)
+VirtCacheCntlr::transition(IntPtr address, Transition::reason_t reason, CacheState::cstate_t old_state, CacheState::cstate_t new_state)
 {
 #ifdef ENABLE_TRANSITIONS
    stats.transitions[old_state][new_state]++;
@@ -2158,7 +2175,7 @@ CacheCntlr::transition(IntPtr address, Transition::reason_t reason, CacheState::
 }
 
 void
-CacheCntlr::updateUncoreStatistics(HitWhere::where_t hit_where, SubsecondTime now)
+VirtCacheCntlr::updateUncoreStatistics(HitWhere::where_t hit_where, SubsecondTime now)
 {
    // To be propagated through next-level refill
    m_last_remote_hit_where = hit_where;
@@ -2204,7 +2221,7 @@ CacheCntlr::updateUncoreStatistics(HitWhere::where_t hit_where, SubsecondTime no
 */
 
 void
-CacheCntlr::acquireLock(UInt64 address)
+VirtCacheCntlr::acquireLock(UInt64 address)
 {
 MYLOG("cache lock acquire %u # %u @ %lx", m_mem_component, m_core_id, address);
    assert(isFirstLevel());
@@ -2213,7 +2230,7 @@ MYLOG("cache lock acquire %u # %u @ %lx", m_mem_component, m_core_id, address);
 }
 
 void
-CacheCntlr::releaseLock(UInt64 address)
+VirtCacheCntlr::releaseLock(UInt64 address)
 {
 MYLOG("cache lock release %u # %u @ %lx", m_mem_component, m_core_id, address);
    assert(isFirstLevel());
@@ -2221,7 +2238,7 @@ MYLOG("cache lock release %u # %u @ %lx", m_mem_component, m_core_id, address);
 }
 
 void
-CacheCntlr::acquireStackLock(UInt64 address, bool this_is_locked)
+VirtCacheCntlr::acquireStackLock(UInt64 address, bool this_is_locked)
 {
 MYLOG("stack lock acquire %u # %u @ %lx", m_mem_component, m_core_id, address);
    // Lock the complete stack for the set containing <address>
@@ -2234,7 +2251,7 @@ MYLOG("stack lock acquire %u # %u @ %lx", m_mem_component, m_core_id, address);
 }
 
 void
-CacheCntlr::releaseStackLock(UInt64 address, bool this_is_locked)
+VirtCacheCntlr::releaseStackLock(UInt64 address, bool this_is_locked)
 {
 MYLOG("stack lock release %u # %u @ %lx", m_mem_component, m_core_id, address);
    if (this_is_locked)
@@ -2244,12 +2261,12 @@ MYLOG("stack lock release %u # %u @ %lx", m_mem_component, m_core_id, address);
 }
 
 
-CacheCntlr*
-CacheCntlr::lastLevelCache()
+VirtCacheCntlr*
+VirtCacheCntlr::lastLevelCache()
 {
    if (! m_last_level) {
       /* Find last-level cache */
-      CacheCntlr* last_level = this;
+      VirtCacheCntlr* last_level = this;
       while(last_level->m_next_cache_cntlr)
          last_level = last_level->m_next_cache_cntlr;
       m_last_level = last_level;
@@ -2258,7 +2275,7 @@ CacheCntlr::lastLevelCache()
 }
 
 bool
-CacheCntlr::isShared(core_id_t core_id)
+VirtCacheCntlr::isShared(core_id_t core_id)
 {
    core_id_t core_id_master = core_id - core_id % m_shared_cores;
    return core_id_master == m_core_id_master;
@@ -2268,37 +2285,37 @@ CacheCntlr::isShared(core_id_t core_id)
 /*** threads ***/
 
 void
-CacheCntlr::wakeUpUserThread(Semaphore* user_thread_sem)
+VirtCacheCntlr::wakeUpUserThread(Semaphore* user_thread_sem)
 {
    (user_thread_sem ? user_thread_sem : m_user_thread_sem)->signal();
 }
 
 void
-CacheCntlr::waitForUserThread(Semaphore* network_thread_sem)
+VirtCacheCntlr::waitForUserThread(Semaphore* network_thread_sem)
 {
    (network_thread_sem ? network_thread_sem : m_network_thread_sem)->wait();
 }
 
 void
-CacheCntlr::waitForNetworkThread()
+VirtCacheCntlr::waitForNetworkThread()
 {
    m_user_thread_sem->wait();
 }
 
 void
-CacheCntlr::wakeUpNetworkThread()
+VirtCacheCntlr::wakeUpNetworkThread()
 {
    m_network_thread_sem->signal();
 }
 
 Semaphore*
-CacheCntlr::getUserThreadSemaphore()
+VirtCacheCntlr::getUserThreadSemaphore()
 {
    return m_user_thread_sem;
 }
 
 Semaphore*
-CacheCntlr::getNetworkThreadSemaphore()
+VirtCacheCntlr::getNetworkThreadSemaphore()
 {
    return m_network_thread_sem;
 }

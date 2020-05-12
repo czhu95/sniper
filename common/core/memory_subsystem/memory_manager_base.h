@@ -6,6 +6,7 @@
 #include "mem_component.h"
 #include "performance_model.h"
 #include "shmem_perf_model.h"
+#include "log.h"
 #include "pr_l1_pr_l2_dram_directory_msi/shmem_msg.h"
 
 void MemoryManagerNetworkCallback(void* obj, NetPacket packet);
@@ -17,6 +18,7 @@ class MemoryManagerBase
       {
          PARAMETRIC_DRAM_DIRECTORY_MSI,
          FAST_NEHALEM,
+         SINGLE_LEVEL_MEMORY,
          NUM_CACHING_PROTOCOL_TYPES
       };
 
@@ -92,6 +94,8 @@ class MemoryManagerBase
 
       virtual void sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr address, Byte* data_buf = NULL, UInt32 data_length = 0, HitWhere::where_t where = HitWhere::UNKNOWN, ShmemPerf *perf = NULL, ShmemPerfModel::Thread_t thread_num = ShmemPerfModel::NUM_CORE_THREADS) = 0;
       virtual void broadcastMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr address, Byte* data_buf = NULL, UInt32 data_length = 0, ShmemPerf *perf = NULL, ShmemPerfModel::Thread_t thread_num = ShmemPerfModel::NUM_CORE_THREADS) = 0;
+
+      virtual void Command(uint64_t cmd, IntPtr start, uint64_t arg1) { LOG_PRINT_ERROR("Should not reach here."); }
 
       static CachingProtocol_t parseProtocolType(String& protocol_type);
       static MemoryManagerBase* createMMU(String protocol_type,

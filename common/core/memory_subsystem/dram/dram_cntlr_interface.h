@@ -4,7 +4,8 @@
 #include "fixed_types.h"
 #include "subsecond_time.h"
 #include "hit_where.h"
-#include "shmem_msg.h"
+#include "../pr_l1_pr_l2_dram_directory_msi/shmem_msg.h"
+#include "../slme_dram_directory_msi/shmem_msg.h"
 
 #include "boost/tuple/tuple.hpp"
 
@@ -36,12 +37,13 @@ class DramCntlrInterface
          , m_shmem_perf_model(shmem_perf_model)
          , m_cache_block_size(cache_block_size)
       {}
-      virtual ~DramCntlrInterface() {}
+      virtual ~DramCntlrInterface();
 
       virtual boost::tuple<SubsecondTime, HitWhere::where_t> getDataFromDram(IntPtr address, core_id_t requester, Byte* data_buf, SubsecondTime now, ShmemPerf *perf) = 0;
       virtual boost::tuple<SubsecondTime, HitWhere::where_t> putDataToDram(IntPtr address, core_id_t requester, Byte* data_buf, SubsecondTime now) = 0;
 
       void handleMsgFromTagDirectory(core_id_t sender, PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg);
+      void handleMsgFromGMM(core_id_t sender, SingleLevelMemory::ShmemMsg* shmem_msg);
 };
 
 #endif // __DRAM_CNTLR_INTERFACE_H

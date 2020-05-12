@@ -79,6 +79,7 @@ class TraceThread : public Runnable
       bool m_cleanup;
       bool m_started;
       bool m_flushed;
+      bool m_virt_cache;
 
       void run();
       void signalStarted();
@@ -110,6 +111,9 @@ class TraceThread : public Runnable
       { return ((TraceThread*)arg)->handleVCPUResumeFunc(); }
       static void __handleICacheFlushFunc(void *arg, uint64_t page)
       { return ((TraceThread*)arg)->handleICacheFlushFunc(page);  }
+      static void __handleGMMCmdFunc(void *arg, uint64_t cmd, IntPtr start, uint64_t arg1)
+      { return ((TraceThread*)arg)->handleGMMCmdFunc(cmd, start, arg1);  }
+
 
       Sift::Mode handleInstructionCountFunc(uint32_t icount);
       void handleCacheOnlyFunc(uint8_t icount, Sift::CacheOnlyType type, uint64_t eip, uint64_t address);
@@ -131,6 +135,8 @@ class TraceThread : public Runnable
       void handleInstructionDetailed(Sift::Instruction &inst, Sift::Instruction &next_inst, PerformanceModel *prfmdl);
       //void addDetailedMemoryInfo(DynamicInstruction *dynins, Sift::Instruction &inst, const xed_decoded_inst_t &xed_inst, uint32_t mem_idx, Operand::Direction op_type, bool is_pretetch, PerformanceModel *prfmdl);
       void addDetailedMemoryInfo(DynamicInstruction *dynins, Sift::Instruction &inst, const dl::DecodedInst &decoded_inst, uint32_t mem_idx, Operand::Direction op_type, bool is_pretetch, PerformanceModel *prfmdl);
+
+      void handleGMMCmdFunc(uint64_t cmd, IntPtr start, uint64_t arg1);
       void unblock();
 
       SubsecondTime getCurrentTime() const;

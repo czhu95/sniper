@@ -138,14 +138,14 @@ void Sift::Writer::End()
    {
 #ifndef __PIN__
       // Disable EndResponse because of lock-up issues with Pin and sift_recorder
-      #if VERBOSE > 0
-      std::cerr << "[DEBUG:" << m_id << "] Write End - Response Wait" << std::endl;
-      #endif
+      // #if VERBOSE > 0
+      // std::cerr << "[DEBUG:" << m_id << "] Write End - Response Wait" << std::endl;
+      // #endif
 
-      Record respRec;
-      response->read(reinterpret_cast<char*>(&respRec), sizeof(respRec.Other));
-      sift_assert(respRec.Other.zero == 0);
-      sift_assert(respRec.Other.type == RecOtherEndResponse);
+      // Record respRec;
+      // response->read(reinterpret_cast<char*>(&respRec), sizeof(respRec.Other));
+      // sift_assert(respRec.Other.zero == 0);
+      // sift_assert(respRec.Other.type == RecOtherEndResponse);
 #endif
       delete response;
       response = NULL;
@@ -1361,4 +1361,35 @@ void Sift::Writer::VCPUResume()
 
    output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
    output->flush();
+}
+
+void Sift::Writer::GMMCommand(uint64_t cmd_type, uintptr_t segment, uint64_t arg1)
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write GMMCommand" << std::endl;
+   #endif
+
+   if (!output)
+   {
+      return;
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherGMMCommand;
+   rec.Other.size = 3 * sizeof(uint64_t);
+   output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   output->write(reinterpret_cast<char*>(&cmd_type), sizeof(uint64_t));
+   output->write(reinterpret_cast<char*>(&segment), sizeof(uint64_t));
+   output->write(reinterpret_cast<char*>(&arg1), sizeof(uint64_t));
+   output->flush();
+
+   initResponse();
+
+   // wait for reply
+   Record respRec;
+   response->read(reinterpret_cast<char*>(&respRec), sizeof(rec.Other));
+
+   sift_assert(respRec.Other.zero == 0);
+   sift_assert(respRec.Other.type == RecOtherGMMCommandResponse);
 }

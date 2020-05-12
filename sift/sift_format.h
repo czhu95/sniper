@@ -121,6 +121,8 @@ namespace Sift
       RecOtherVCPUIdleResponse,
       RecOtherVCPUResume,
       RecOtherVCPUResumeResponse,
+      RecOtherGMMCommand,
+      RecOtherGMMCommandResponse,
       RecOtherEnd = 0xff,
    } RecOtherType;
 

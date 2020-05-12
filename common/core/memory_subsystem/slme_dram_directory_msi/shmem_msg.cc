@@ -1,0 +1,124 @@
+#include <string.h>
+#include "shmem_msg.h"
+#include "shmem_perf.h"
+#include "../pr_l1_pr_l2_dram_directory_msi/shmem_msg.h"
+#include "log.h"
+
+namespace SingleLevelMemory
+{
+   ShmemMsg::ShmemMsg(ShmemPerf* perf) :
+      m_msg_type(PrL1PrL2DramDirectoryMSI::ShmemMsg::INVALID_MSG_TYPE),
+      m_sender_mem_component(MemComponent::INVALID_MEM_COMPONENT),
+      m_receiver_mem_component(MemComponent::INVALID_MEM_COMPONENT),
+      m_requester(INVALID_CORE_ID),
+      m_where(HitWhere::UNKNOWN),
+      m_vaddr(INVALID_ADDRESS),
+      m_paddr(INVALID_ADDRESS),
+      m_data_buf(NULL),
+      m_data_length(0),
+      m_perf(perf)
+   {}
+
+   ShmemMsg::ShmemMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type,
+         MemComponent::component_t sender_mem_component,
+         MemComponent::component_t receiver_mem_component,
+         core_id_t requester,
+         IntPtr vaddr,
+         IntPtr paddr,
+         Byte* data_buf,
+         UInt32 data_length,
+         ShmemPerf* perf) :
+      m_msg_type(msg_type),
+      m_sender_mem_component(sender_mem_component),
+      m_receiver_mem_component(receiver_mem_component),
+      m_requester(requester),
+      m_where(HitWhere::UNKNOWN),
+      m_vaddr(vaddr),
+      m_paddr(paddr),
+      m_data_buf(data_buf),
+      m_data_length(data_length),
+      m_perf(perf)
+   {}
+
+   ShmemMsg::ShmemMsg(ShmemMsg* shmem_msg) :
+      m_msg_type(shmem_msg->getMsgType()),
+      m_sender_mem_component(shmem_msg->getSenderMemComponent()),
+      m_receiver_mem_component(shmem_msg->getReceiverMemComponent()),
+      m_requester(shmem_msg->getRequester()),
+      m_vaddr(shmem_msg->getAddress()),
+      m_paddr(shmem_msg->getPhysAddress()),
+      m_data_buf(shmem_msg->getDataBuf()),
+      m_data_length(shmem_msg->getDataLength()),
+      m_perf(shmem_msg->getPerf())
+   {}
+
+   ShmemMsg::~ShmemMsg()
+   {}
+
+   ShmemMsg*
+   ShmemMsg::getShmemMsg(Byte* msg_buf, ShmemPerf* perf)
+   {
+      ShmemMsg* shmem_msg = new ShmemMsg(perf);
+      memcpy((void*) shmem_msg, msg_buf, sizeof(*shmem_msg));
+      if (shmem_msg->getDataLength() > 0)
+      {
+         shmem_msg->setDataBuf(new Byte[shmem_msg->getDataLength()]);
+         memcpy((void*) shmem_msg->getDataBuf(), msg_buf + sizeof(*shmem_msg), shmem_msg->getDataLength());
+      }
+      return shmem_msg;
+   }
+
+   Byte*
+   ShmemMsg::makeMsgBuf()
+   {
+      Byte* msg_buf = new Byte[getMsgLen()];
+      memcpy(msg_buf, (void*) this, sizeof(*this));
+      if (m_data_length > 0)
+      {
+         LOG_ASSERT_ERROR(m_data_buf != NULL, "m_data_buf(%p)", m_data_buf);
+         memcpy(msg_buf + sizeof(*this), (void*) m_data_buf, m_data_length);
+      }
+
+      return msg_buf;
+   }
+
+   UInt32
+   ShmemMsg::getMsgLen()
+   {
+      return (sizeof(*this) + m_data_length);
+   }
+
+   UInt32
+   ShmemMsg::getModeledLength()
+   {
+      switch(m_msg_type)
+      {
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REQ:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REQ:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::FLUSH_REQ:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::WB_REQ:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REP:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REP:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_READ_REQ:
+            // msg_type + address
+            // msg_type - 1 byte
+            return (1 + sizeof(IntPtr));
+
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REP:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::FLUSH_REP:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::WB_REP:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_WRITE_REQ:
+         case PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_READ_REP:
+            // msg_type + address + cache_block
+            return (1 + sizeof(IntPtr) + m_data_length);
+
+         default:
+            LOG_PRINT_ERROR("Unrecognized Msg Type(%u)", m_msg_type);
+            return 0;
+      }
+   }
+
+}
