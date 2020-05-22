@@ -1,1 +1,0 @@
-/home/chenzhuo/dev/projects/sniper_dev/sift/recorder/../../common/misc/fixed_types.h

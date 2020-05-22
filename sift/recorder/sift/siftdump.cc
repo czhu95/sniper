@@ -1,1 +1,0 @@
-/home/chenzhuo/dev/projects/sniper_dev/sift/recorder/../../sift/siftdump.cc
