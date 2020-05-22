@@ -240,20 +240,25 @@ namespace SingleLevelMemory
          // Handle Request from previous level cache
          HitWhere::where_t processShmemReqFromPrevCache(VirtCacheCntlr* requester, Core::mem_op_t mem_op_type, IntPtr address, bool modeled, bool count, Prefetch::prefetch_type_t isPrefetch, SubsecondTime t_issue, bool have_write_lock);
 
+
+         // Process GMM subscription
+         void processSubReqToGMM(IntPtr address, Byte* data_buf, UInt32 data_length);
+         void processSubRepFromGMM(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg);
+
          // Process Request from L1 Cache
          boost::tuple<HitWhere::where_t, SubsecondTime> accessDRAM(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefetch, Byte* data_buf);
          void initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefetch, SubsecondTime t_issue);
-         void processExReqToDirectory(IntPtr address);
-         void processShReqToDirectory(IntPtr address);
-         void processUpgradeReqToDirectory(IntPtr address, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num);
+         void processExReqToGMM(IntPtr address);
+         void processShReqToGMM(IntPtr address);
+         void processUpgradeReqToGMM(IntPtr address, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num);
 
          // Process Request from Dram Dir
-         void processExRepFromDramDirectory(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg);
-         void processShRepFromDramDirectory(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg);
-         void processUpgradeRepFromDramDirectory(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg);
-         void processInvReqFromDramDirectory(core_id_t sender, ShmemMsg* shmem_msg);
-         void processFlushReqFromDramDirectory(core_id_t sender, ShmemMsg* shmem_msg);
-         void processWbReqFromDramDirectory(core_id_t sender, ShmemMsg* shmem_msg);
+         void processExRepFromGMM(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg);
+         void processShRepFromGMM(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg);
+         void processUpgradeRepFromGMM(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg);
+         void processInvReqFromGMM(core_id_t sender, ShmemMsg* shmem_msg);
+         void processFlushReqFromGMM(core_id_t sender, ShmemMsg* shmem_msg);
+         void processWbReqFromGMM(core_id_t sender, ShmemMsg* shmem_msg);
 
          // Cache Block Size
          UInt32 getCacheBlockSize() { return m_cache_block_size; }

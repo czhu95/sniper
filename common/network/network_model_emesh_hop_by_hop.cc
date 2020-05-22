@@ -132,6 +132,8 @@ NetworkModelEMeshHopByHop::routePacket(const NetPacket &pkt, std::vector<Hop> &n
 
    LOG_PRINT("pkt length(%u)", pkt_length);
 
+   // printf("^%u, begin %s\n", m_core_id, itostr(pkt.time).c_str());
+
    if (pkt.sender == m_core_id)
    {
       m_total_packets_sent ++;
@@ -198,7 +200,7 @@ NetworkModelEMeshHopByHop::routePacket(const NetPacket &pkt, std::vector<Hop> &n
          }
       }
    }
-   else if (m_fake_node || pkt.type == SLME_MAGIC)
+   else if (pkt.type == SLME_MAGIC)
    {
       addHop(DESTINATION, pkt.receiver, pkt.receiver, pkt.time, pkt_length, nextHops, requester);
    }
@@ -206,7 +208,7 @@ NetworkModelEMeshHopByHop::routePacket(const NetPacket &pkt, std::vector<Hop> &n
    {
       // Injection Port Modeling
       SubsecondTime injection_port_queue_delay = SubsecondTime::Zero();
-      if (pkt.sender == m_core_id)
+      if (pkt.sender - pkt.sender % m_concentration == m_core_id && !m_fake_node)
       {
          injection_port_queue_delay = computeInjectionPortQueueDelay(pkt.receiver, pkt.time, pkt_length);
          *(subsecond_time_t*)&pkt.queue_delay += injection_port_queue_delay;
@@ -279,6 +281,8 @@ NetworkModelEMeshHopByHop::addHop(OutputDirection direction,
       h.time = pkt_time;
    else
       h.time = pkt_time + computeLatency(direction, pkt_time, pkt_length, requester, queue_delay_stats);
+
+   // printf("^%u %s %s\n", m_core_id, OutputDirectionString(direction), itostr(h.time).c_str());
 
    nextHops.push_back(h);
 }

@@ -1,13 +1,12 @@
 #include <string.h>
 #include "shmem_msg.h"
 #include "shmem_perf.h"
-#include "../pr_l1_pr_l2_dram_directory_msi/shmem_msg.h"
 #include "log.h"
 
 namespace SingleLevelMemory
 {
    ShmemMsg::ShmemMsg(ShmemPerf* perf) :
-      m_msg_type(PrL1PrL2DramDirectoryMSI::ShmemMsg::INVALID_MSG_TYPE),
+      m_msg_type(ShmemMsg::INVALID_MSG_TYPE),
       m_sender_mem_component(MemComponent::INVALID_MEM_COMPONENT),
       m_receiver_mem_component(MemComponent::INVALID_MEM_COMPONENT),
       m_requester(INVALID_CORE_ID),
@@ -19,7 +18,7 @@ namespace SingleLevelMemory
       m_perf(perf)
    {}
 
-   ShmemMsg::ShmemMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type,
+   ShmemMsg::ShmemMsg(ShmemMsg::msg_t msg_type,
          MemComponent::component_t sender_mem_component,
          MemComponent::component_t receiver_mem_component,
          core_id_t requester,
@@ -93,25 +92,25 @@ namespace SingleLevelMemory
    {
       switch(m_msg_type)
       {
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REQ:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REQ:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::FLUSH_REQ:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::WB_REQ:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REP:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REP:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_READ_REQ:
+         case EX_REQ:
+         case SH_REQ:
+         case INV_REQ:
+         case FLUSH_REQ:
+         case WB_REQ:
+         case UPGRADE_REP:
+         case UPGRADE_REQ:
+         case INV_REP:
+         case DRAM_READ_REQ:
             // msg_type + address
             // msg_type - 1 byte
             return (1 + sizeof(IntPtr));
 
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REP:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::FLUSH_REP:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::WB_REP:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_WRITE_REQ:
-         case PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_READ_REP:
+         case EX_REP:
+         case SH_REP:
+         case FLUSH_REP:
+         case WB_REP:
+         case DRAM_WRITE_REQ:
+         case DRAM_READ_REP:
             // msg_type + address + cache_block
             return (1 + sizeof(IntPtr) + m_data_length);
 

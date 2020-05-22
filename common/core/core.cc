@@ -327,6 +327,8 @@ Core::initiateMemoryAccess(MemComponent::component_t mem_component,
    IntPtr end_addr_aligned = end_addr - (end_addr % cache_block_size);
    Byte *curr_data_buffer_head = (Byte*) data_buf;
 
+   LOG_ASSERT_ERROR(Sim()->getCfg()->getString("caching_protocol/type") == "single_level_memory" || address < (128UL << 30), "Accessing physical address beyond DRAM capacity.");
+
    for (IntPtr curr_addr_aligned = begin_addr_aligned; curr_addr_aligned <= end_addr_aligned; curr_addr_aligned += cache_block_size)
    {
       // Access the cache one line at a time

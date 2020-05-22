@@ -8,6 +8,7 @@ const char* CacheBlockInfo::option_names[] =
 {
    "prefetch",
    "warmup",
+   "subscribed",
 };
 
 const char* CacheBlockInfo::getOptionName(option_t option)

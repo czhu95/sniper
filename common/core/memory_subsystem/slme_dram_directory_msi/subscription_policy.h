@@ -12,47 +12,44 @@
 #include "mem_component.h"
 #include "coherency_protocol.h"
 
+#include <set>
+
 namespace SingleLevelMemory
 {
-   class DirectoryMSIPolicy: public PolicyBase
+   class SubscriptionPolicy: public PolicyBase
    {
       public:
-         DirectoryMSIPolicy(
+         enum Mode
+         {
+            READWRITE,
+            READONLY,
+         };
+
+         SubscriptionPolicy(
                core_id_t core_id,
                GlobalMemoryManager* memory_manager,
-               AddressHomeLookup* dram_controller_home_lookup,
-               UInt32 dram_directory_total_entries,
-               UInt32 dram_directory_associativity,
-               UInt32 cache_block_size,
-               UInt32 dram_directory_max_num_sharers,
-               UInt32 dram_directory_max_hw_sharers,
-               String dram_directory_type_str,
-               ComponentLatency dram_directory_cache_access_time,
                ShmemPerfModel* shmem_perf_model);
 
-         ~DirectoryMSIPolicy() override;
+         ~SubscriptionPolicy() override;
 
          void handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg) override;
          void handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg) override;
          void handleMsgFromDRAM(core_id_t sender, ShmemMsg* shmem_msg) override;
 
+         void subscribe(core_id_t subscriber) {};
+         void switchMode(Mode mode);
+
       protected:
-         PrL1PrL2DramDirectoryMSI::DramDirectoryCache* m_dram_directory_cache;
-         AddressHomeLookup* m_dram_controller_home_lookup;
          ReqQueueList* m_dram_directory_req_queue_list;
 
          core_id_t m_core_id;
-         UInt32 m_cache_block_size;
+
+         std::vector<core_id_t> m_subscriber_list;
+         Mode m_mode;
 
          ShmemPerfModel* m_shmem_perf_model;
          ShmemPerf m_dummy_shmem_perf;
 
-         CoherencyProtocol::type_t m_protocol;
-
-         UInt64 evict[DirectoryState::NUM_DIRECTORY_STATES];
-         UInt64 forward, forward_failed;
-
-         UInt32 getCacheBlockSize() { return m_cache_block_size; }
          ShmemPerfModel* getShmemPerfModel() { return m_shmem_perf_model; }
 
          // Private Functions

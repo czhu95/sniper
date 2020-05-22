@@ -57,6 +57,7 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    , m_started(false)
    , m_flushed(false)
    , m_stopped(false)
+   , m_virt_cache(false)
 {
 
    //if (!xed_initialized)
@@ -104,7 +105,7 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    if (Sim()->getCfg()->getString("caching_protocol/type") == "single_level_memory")
    {
       m_virt_cache = true;
-      // m_trace.setHandleGMMCmdFunc(TraceThread::__handleGMMCmdFunc, this);
+      m_trace.setHandleGMMCmdFunc(TraceThread::__handleGMMCmdFunc, this);
    }
    thread->setVa2paFunc(_va2pa, (UInt64)this);
 

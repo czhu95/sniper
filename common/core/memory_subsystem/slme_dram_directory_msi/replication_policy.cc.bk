@@ -24,19 +24,17 @@ namespace SingleLevelMemory
 {
 
 ReplicationPolicy::ReplicationPolicy(
-      Core* core,
+      core_id_t core_id,
       GlobalMemoryManager* memory_manager,
       AddressHomeLookup* dram_controller_home_lookup,
       UInt32 replica_block_size,
       ShmemPerfModel* shmem_perf_model):
    PolicyBase(memory_manager),
    m_dram_controller_home_lookup(dram_controller_home_lookup),
-   m_core_id(core->getId()),
+   m_core_id(core_id),
    m_replica_block_size(replica_block_size),
-   m_shmem_perf_model(shmem_perf_model),
-   m_access_time(NULL, 0)
+   m_shmem_perf_model(shmem_perf_model)
 {
-   m_access_time = ComponentLatency(core->getDvfsDomain(), Sim()->getCfg()->getInt("perf_model/gmm_access_cycles"));
    m_dram_directory_req_queue_list = new ReqQueueList();
 }
 
@@ -182,18 +180,20 @@ ReplicationPolicy::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
    IntPtr phys_address = orig_shmem_msg->getPhysAddress();
    assert(phys_address != INVALID_ADDRESS);
 
-   core_id_t dram_node;
+   core_id_t dram_node = m_core_id;
    if (m_replicas.count(repl_addr) == 0)
    {
       dram_node = m_dram_controller_home_lookup->getHome(phys_address);
-      if (dram_node != m_core_id)
-         getShmemPerfModel()->incrElapsedTime(m_access_time.getLatency(), ShmemPerfModel::_SIM_THREAD);
+      if (m_outstanding_remote.count(repl_addr))
+      {
+         m_outstanding_remote[repl_addr].insert(address);
+         return;
+      }
+      else
+      {
+         m_outstanding_remote[repl_addr] = {address};
+      }
    }
-   else
-   {
-      dram_node = m_core_id;
-   }
-
 
    MYLOG("Sending request to DRAM for the data");
    getMemoryManager()->sendMsg(ShmemMsg::DRAM_READ_REQ,
@@ -242,18 +242,17 @@ ReplicationPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    if (hit_where == HitWhere::DRAM)
       hit_where = (sender == shmem_msg->getRequester()) ? HitWhere::DRAM_LOCAL : HitWhere::DRAM_REMOTE;
 
+   IntPtr repl_addr = address - address % m_replica_block_size;
    if (hit_where == HitWhere::DRAM_REMOTE)
    {
-      IntPtr repl_addr = address - address % m_replica_block_size;
-      // assert(m_replicas.count(repl_addr) == 0);
+      assert(m_replicas.count(repl_addr) == 0);
       m_replicas.insert(repl_addr);
-      LOG_PRINT_WARNING("Replication Policy: Remote DRAM access: va = %p", address);
+      LOG_PRINT_WARNING("Remote DRAM access: va = %p", address);
       MYLOG("Replicate @ %lx", repl_addr);
+      assert(m_outstanding_remote.count(repl_addr));
+      int removed = m_outstanding_remote[repl_addr].erase(address);
+      assert(removed);
    }
-   // else
-   // {
-   //    LOG_PRINT_WARNING("Replication Policy: Local DRAM access: va = %p", address);
-   // }
 
    //   Send reply
    MYLOG("MSG DRAM>%d for %lx", shmem_req->getShmemMsg()->getRequester(), address )
@@ -269,6 +268,16 @@ ReplicationPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
 
    // Process Next Request
    processNextReqFromL2Cache(address);
+
+   if (hit_where == HitWhere::DRAM_REMOTE)
+   {
+      for (const auto &addr : m_outstanding_remote[repl_addr])
+      {
+         processNextReqFromL2Cache(addr);
+      }
+      m_outstanding_remote.erase(repl_addr);
+   }
+
    MYLOG("End @ %lx", address);
 
 }

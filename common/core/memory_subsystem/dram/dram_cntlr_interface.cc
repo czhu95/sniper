@@ -66,13 +66,13 @@ void DramCntlrInterface::handleMsgFromTagDirectory(core_id_t sender, PrL1PrL2Dra
 
 void DramCntlrInterface::handleMsgFromGMM(core_id_t sender, SingleLevelMemory::ShmemMsg* shmem_msg)
 {
-   PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
+   SingleLevelMemory::ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
    SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD);
    shmem_msg->getPerf()->updateTime(msg_time);
 
    switch (shmem_msg_type)
    {
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_READ_REQ:
+      case SingleLevelMemory::ShmemMsg::DRAM_READ_REQ:
       {
          // core_id_t core_id = getMemoryManager()->getCore()->getId();
          // auto addr_pair = std::make_pair(shmem_msg->getAddress() >> 12, shmem_msg->getPhysAddress() >> 12);
@@ -93,7 +93,7 @@ void DramCntlrInterface::handleMsgFromGMM(core_id_t sender, SingleLevelMemory::S
          shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD),
             hit_where == HitWhere::DRAM_CACHE ? ShmemPerf::DRAM_CACHE : ShmemPerf::DRAM);
 
-         getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_READ_REP,
+         getMemoryManager()->sendMsg(SingleLevelMemory::ShmemMsg::DRAM_READ_REP,
                MemComponent::DRAM, MemComponent::GMM,
                shmem_msg->getRequester() /* requester */,
                sender /* receiver */,
@@ -103,7 +103,7 @@ void DramCntlrInterface::handleMsgFromGMM(core_id_t sender, SingleLevelMemory::S
          break;
       }
 
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_WRITE_REQ:
+      case SingleLevelMemory::ShmemMsg::DRAM_WRITE_REQ:
       {
          putDataToDram(shmem_msg->getPhysAddress(), shmem_msg->getRequester(), shmem_msg->getDataBuf(), msg_time);
 

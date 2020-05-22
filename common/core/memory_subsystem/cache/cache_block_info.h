@@ -13,6 +13,7 @@ class CacheBlockInfo
       {
          PREFETCH,
          WARMUP,
+         SUBSCRIBED,
          NUM_OPTIONS
       };
 

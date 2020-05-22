@@ -13,6 +13,8 @@
 #include "coherency_protocol.h"
 
 #include <set>
+#include <map>
+#include <vector>
 
 namespace SingleLevelMemory
 {
@@ -20,7 +22,7 @@ namespace SingleLevelMemory
    {
       public:
          ReplicationPolicy(
-               core_id_t core_id,
+               Core* core,
                GlobalMemoryManager* memory_manager,
                AddressHomeLookup* dram_controller_home_lookup,
                UInt32 replica_block_size,
@@ -49,6 +51,10 @@ namespace SingleLevelMemory
 
          std::set<IntPtr> m_replicas;
 
+         std::map<IntPtr, std::set<IntPtr>> m_outstanding_remote;
+
+         ComponentLatency m_access_time;
+
          ShmemPerfModel* getShmemPerfModel() { return m_shmem_perf_model; }
 
          // Private Functions
@@ -56,17 +62,11 @@ namespace SingleLevelMemory
          void processNullifyReq(ShmemReq* shmem_req);
 
          void processNextReqFromL2Cache(IntPtr address);
-         void processExReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
          void processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
-         void retrieveDataAndSendToL2Cache(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t reply_msg_type, core_id_t receiver, IntPtr address, Byte* cached_data_buf, ShmemMsg *orig_shmem_msg);
+         void retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type, core_id_t receiver, IntPtr address, Byte* cached_data_buf, ShmemMsg *orig_shmem_msg);
          void processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg);
 
-         void processUpgradeReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
-
          void processInvRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg);
-         void processFlushRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg);
-         void processWbRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg);
-         void sendDataToDram(IntPtr address, core_id_t requester, Byte* data_buf, SubsecondTime now);
 
          void updateShmemPerf(ShmemReq *shmem_req, ShmemPerf::shmem_times_type_t reason = ShmemPerf::UNKNOWN)
          {

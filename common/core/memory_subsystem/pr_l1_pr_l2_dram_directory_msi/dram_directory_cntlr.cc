@@ -11,7 +11,7 @@
    extern Lock iolock;
 #  include "core_manager.h"
 #  include "simulator.h"
-#  define MYLOG(...) { ScopedLock l(iolock); fflush(stdout); printf("[%s] %d%cdd %-25s@%3u: ", itostr(getShmemPerfModel()->getElapsedTime()).c_str(), getMemoryManager()->getCore()->getId(), Sim()->getCoreManager()->amiUserThread() ? '^' : '_', __FUNCTION__, __LINE__); printf(__VA_ARGS__); printf("\n"); fflush(stdout); }
+#  define MYLOG(...) { ScopedLock l(iolock); fflush(stdout); printf("[%s] %d%cdd %-25s@%3u: ", itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD)).c_str(), getMemoryManager()->getCore()->getId(), Sim()->getCoreManager()->amiUserThread() ? '^' : '_', __FUNCTION__, __LINE__); printf(__VA_ARGS__); printf("\n"); fflush(stdout); }
 #else
 #  define MYLOG(...) {}
 #endif
@@ -793,6 +793,20 @@ DramDirectoryCntlr::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    HitWhere::where_t hit_where = shmem_msg->getWhere();
    if (hit_where == HitWhere::DRAM)
       hit_where = (sender == shmem_msg->getRequester()) ? HitWhere::DRAM_LOCAL : HitWhere::DRAM_REMOTE;
+
+   // if (shmem_req->getShmemMsg()->getRequester() == 0)
+   // {
+   //    if (hit_where == HitWhere::DRAM_REMOTE)
+   //    {
+   //       LOG_PRINT_WARNING("Remote DRAM access: pa = %p", address);
+   //    }
+   //    else
+   //    {
+   //       LOG_PRINT_WARNING("Local DRAM access: pa = %p", address);
+   //    }
+
+   // }
+
 
    //   Send reply
    MYLOG("MSG DRAM>%d for %lx", shmem_req->getShmemMsg()->getRequester(), address )

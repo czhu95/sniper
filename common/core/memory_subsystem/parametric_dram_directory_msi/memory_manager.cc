@@ -19,7 +19,7 @@
    extern Lock iolock;
 #  include "core_manager.h"
 #  include "simulator.h"
-#  define MYLOG(...) { ScopedLock l(iolock); fflush(stderr); fprintf(stderr, "[%s] %d%cmm %-25s@%03u: ", itostr(getShmemPerfModel()->getElapsedTime()).c_str(), getCore()->getId(), Sim()->getCoreManager()->amiUserThread() ? '^' : '_', __FUNCTION__, __LINE__); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); fflush(stderr); }
+#  define MYLOG(...) { ScopedLock l(iolock); fflush(stdout); fprintf(stdout, "[%s] %d%cmm %-25s@%03u: ", itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(), getCore()->getId(), Sim()->getCoreManager()->amiUserThread() ? '^' : '_', __FUNCTION__, __LINE__); fprintf(stdout, __VA_ARGS__); fprintf(stdout, "\n"); fflush(stdout); }
 #else
 #  define MYLOG(...) {}
 #endif
@@ -448,6 +448,8 @@ MYLOG("begin");
    PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg = PrL1PrL2DramDirectoryMSI::ShmemMsg::getShmemMsg((Byte*) packet.data, &m_dummy_shmem_perf);
    SubsecondTime msg_time = packet.time;
 
+MYLOG("Receive message time: %s", itostr(msg_time).c_str());
+
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_SIM_THREAD, msg_time);
    shmem_msg->getPerf()->updatePacket(packet);
 
@@ -456,7 +458,7 @@ MYLOG("begin");
 
    if (m_enabled)
    {
-      LOG_PRINT("Got Shmem Msg: type(%i), address(0x%x), sender_mem_component(%u), receiver_mem_component(%u), sender(%i), receiver(%i)",
+      MYLOG("Got Shmem Msg: type(%i), address(0x%lx), sender_mem_component(%u), receiver_mem_component(%u), sender(%i), receiver(%i)",
             shmem_msg->getMsgType(), shmem_msg->getAddress(), sender_mem_component, receiver_mem_component, sender, packet.receiver);
    }
 
@@ -538,7 +540,7 @@ MYLOG("end");
 void
 MemoryManager::sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr address, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
-MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, receiver, receiver_mem_component);
+MYLOG("send msg %u %ul%u > %ul%u @ %lx", msg_type, requester, sender_mem_component, receiver, receiver_mem_component, address);
    assert((data_buf == NULL) == (data_length == 0));
 #ifdef SLME_DRAM
    bool send_magic = msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REQ
@@ -551,7 +553,7 @@ MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, re
    else if (msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SLME_SH_REP)
       msg_type = PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP;
 #else
-   bool send_magic = msg_type != PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ;
+   bool send_magic = false;
 #endif
 
    PrL1PrL2DramDirectoryMSI::ShmemMsg shmem_msg(msg_type, sender_mem_component, receiver_mem_component, requester, address, data_buf, data_length, perf);
@@ -561,9 +563,11 @@ MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, re
    SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(thread_num);
    perf->updateTime(msg_time);
 
+MYLOG("Send message time: %s", itostr(msg_time).c_str());
+
    if (m_enabled)
    {
-      LOG_PRINT("Sending Msg: type(%u), address(0x%x), sender_mem_component(%u), receiver_mem_component(%u), requester(%i), sender(%i), receiver(%i)", msg_type, address, sender_mem_component, receiver_mem_component, requester, getCore()->getId(), receiver);
+      MYLOG("Sending Msg: type(%u), address(0x%lx), sender_mem_component(%u), receiver_mem_component(%u), requester(%i), sender(%i), receiver(%i)", msg_type, address, sender_mem_component, receiver_mem_component, requester, getCore()->getId(), receiver);
    }
 
    NetPacket packet(msg_time, send_magic ? SLME_MAGIC : SHARED_MEM_1,

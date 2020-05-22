@@ -388,17 +388,17 @@ GlobalMemoryManager::coreInitiateMemoryAccess(
 }
 
 void
-GlobalMemoryManager::sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+GlobalMemoryManager::sendMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
    sendMsg(msg_type, sender_mem_component, receiver_mem_component, requester, receiver, vaddr, INVALID_ADDRESS, data_buf, data_length, where, perf, thread_num);
 }
 
 void
-GlobalMemoryManager::sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, IntPtr paddr, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+GlobalMemoryManager::sendMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, IntPtr paddr, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
 MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, receiver, receiver_mem_component);
    assert((data_buf == NULL) == (data_length == 0));
-   bool send_magic = msg_type != PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ;
+   bool send_magic = msg_type != ShmemMsg::SH_REQ;
 
    // bool send_magic = false;
 
@@ -424,13 +424,13 @@ MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, re
 }
 
 void
-GlobalMemoryManager::broadcastMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr vaddr, Byte* data_buf, UInt32 data_length, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+GlobalMemoryManager::broadcastMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr vaddr, Byte* data_buf, UInt32 data_length, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
    broadcastMsg(msg_type, sender_mem_component, receiver_mem_component, requester, vaddr, INVALID_ADDRESS, data_buf, data_length, perf, thread_num);
 }
 
 void
-GlobalMemoryManager::broadcastMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr vaddr, IntPtr paddr, Byte* data_buf, UInt32 data_length, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+GlobalMemoryManager::broadcastMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr vaddr, IntPtr paddr, Byte* data_buf, UInt32 data_length, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
 MYLOG("bcast msg");
    assert((data_buf == NULL) == (data_length == 0));
@@ -620,10 +620,10 @@ GlobalMemoryManager::policyLookup(IntPtr address)
 void
 GlobalMemoryManager::Command(uint64_t cmd_type, IntPtr start, uint64_t arg1)
 {
-   if (cmd_type == 0)
-      createSegment(start, arg1);
-   else if (cmd_type == 1)
-      segmentAssignPolicy(start, arg1);
+   // if (cmd_type == 0)
+   //    createSegment(start, arg1);
+   // else if (cmd_type == 1)
+   //    segmentAssignPolicy(start, arg1);
 }
 
 void
@@ -657,11 +657,20 @@ GlobalMemoryManager::segmentAssignPolicy(IntPtr start, uint64_t policy_id)
    {
       if (seg.m_start == start)
       {
-         seg.m_policy = new ReplicationPolicy(getCore()->getId(),
-               this,
-               m_dram_controller_home_lookup,
-               1024 * 1024,
-               getShmemPerfModel());
+         if (policy_id == 1)
+         {
+            seg.m_policy = new ReplicationPolicy(getCore(),
+                  this,
+                  m_dram_controller_home_lookup,
+                  1024 * 1024,
+                  getShmemPerfModel());
+         }
+         else
+         {
+            if (seg.m_policy)
+               delete seg.m_policy;
+            seg.m_policy = NULL;
+         }
 
          MYLOG("Segment assign policy: %p - %d", (void *)seg.m_start, policy_id);
       }

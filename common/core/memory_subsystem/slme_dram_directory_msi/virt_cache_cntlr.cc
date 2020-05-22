@@ -551,6 +551,8 @@ MYLOG("processMemOpFromCore l%d after next fill", m_mem_component);
 
 
    accessCache(mem_op_type, ca_address, offset, data_buf, data_length, hit_where == HitWhere::where_t(m_mem_component) && count);
+   if (cache_block_info->hasOption(CacheBlockInfo::SUBSCRIBED))
+      processSubReqToGMM(ca_address + offset, data_buf, data_length);
 MYLOG("access done");
 
 
@@ -903,7 +905,7 @@ VirtCacheCntlr::processShmemReqFromPrevCache(VirtCacheCntlr* requester, Core::me
 
       if (m_last_remote_hit_where != HitWhere::UNKNOWN)
       {
-         // handleMsgFromDramDirectory just provided us with the data. Its source was left in m_last_remote_hit_where
+         // handleMsgFromGMM just provided us with the data. Its source was left in m_last_remote_hit_where
          hit_where = m_last_remote_hit_where;
          m_last_remote_hit_where = HitWhere::UNKNOWN;
       }
@@ -1164,16 +1166,16 @@ VirtCacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr addre
          CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
          if (cache_block_info && (cache_block_info->getCState() == CacheState::SHARED))
          {
-            processUpgradeReqToDirectory(address, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
+            processUpgradeReqToGMM(address, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
          }
          else
          {
-            processExReqToDirectory(address);
+            processExReqToGMM(address);
          }
       }
       else
       {
-         processShReqToDirectory(address);
+         processShReqToGMM(address);
       }
    }
    else
@@ -1184,7 +1186,26 @@ VirtCacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr addre
 }
 
 void
-VirtCacheCntlr::processExReqToDirectory(IntPtr address)
+VirtCacheCntlr::processSubReqToGMM(IntPtr address, Byte *data_buf, UInt32 data_length)
+{
+   MYLOG("SUB REP>%d @ %lx", m_core_id_master, address);
+
+   CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
+
+   LOG_ASSERT_ERROR (cache_block_info->hasOption(CacheBlockInfo::SUBSCRIBED), "SubReq for a Cacheblock not subscribed");
+
+   getMemoryManager()->sendMsg(ShmemMsg::SUB_REQ,
+         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+         m_core_id_master,
+         m_core_id_master,
+         address,
+         Sim()->getThreadManager()->getThreadFromID(m_core_id)->va2pa(address),
+         data_buf, data_length,
+         HitWhere::UNKNOWN, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
+}
+
+void
+VirtCacheCntlr::processExReqToGMM(IntPtr address)
 {
    // We need to send a request to the Dram Directory Cache
    MYLOG("EX REQ>%d @ %lx", m_core_id_master ,address);
@@ -1194,7 +1215,7 @@ VirtCacheCntlr::processExReqToDirectory(IntPtr address)
    LOG_ASSERT_ERROR (cstate != CacheState::SHARED, "ExReq for a Cacheblock in S, should be a UpgradeReq");
    assert((cstate == CacheState::INVALID));
 
-   getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REQ,
+   getMemoryManager()->sendMsg(ShmemMsg::EX_REQ,
          MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
          m_core_id_master /* requester */,
          m_core_id_master /* receiver */,
@@ -1205,7 +1226,7 @@ VirtCacheCntlr::processExReqToDirectory(IntPtr address)
 }
 
 void
-VirtCacheCntlr::processUpgradeReqToDirectory(IntPtr address, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+VirtCacheCntlr::processUpgradeReqToGMM(IntPtr address, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
    // We need to send a request to the Dram Directory Cache
    MYLOG("UPGR REQ @ %lx", address);
@@ -1216,7 +1237,7 @@ VirtCacheCntlr::processUpgradeReqToDirectory(IntPtr address, ShmemPerf *perf, Sh
    setCacheState(address, CacheState::SHARED_UPGRADING);
 
    core_id_t owner = cache_block_info->getOwner();
-   getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ,
+   getMemoryManager()->sendMsg(ShmemMsg::UPGRADE_REQ,
          MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
          m_core_id_master /* requester */,
          m_core_id_master /* receiver */,
@@ -1227,10 +1248,10 @@ VirtCacheCntlr::processUpgradeReqToDirectory(IntPtr address, ShmemPerf *perf, Sh
 }
 
 void
-VirtCacheCntlr::processShReqToDirectory(IntPtr address)
+VirtCacheCntlr::processShReqToGMM(IntPtr address)
 {
 MYLOG("SH REQ @ %lx", address);
-   getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ,
+   getMemoryManager()->sendMsg(ShmemMsg::SH_REQ,
          MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
          m_core_id_master /* requester */,
          m_core_id_master /* receiver */,
@@ -1521,7 +1542,7 @@ MYLOG("evicting @%lx", evict_address);
          {
             // Send back the data also
 MYLOG("evict FLUSH %lx", evict_address);
-            getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::FLUSH_REP,
+            getMemoryManager()->sendMsg(ShmemMsg::FLUSH_REP,
                   MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
                   m_core_id /* requester */,
                   home_node_id /* receiver */,
@@ -1536,7 +1557,7 @@ MYLOG("evict INV %lx", evict_address);
             LOG_ASSERT_ERROR(evict_block_info.getCState() == CacheState::SHARED || evict_block_info.getCState() == CacheState::EXCLUSIVE,
                   "evict_address(0x%x), evict_state(%u)",
                   evict_address, evict_block_info.getCState());
-            getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REP,
+            getMemoryManager()->sendMsg(ShmemMsg::INV_REP,
                   MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
                   m_core_id /* requester */,
                   home_node_id /* receiver */,
@@ -1786,11 +1807,12 @@ void
 VirtCacheCntlr::handleMsgFromGMM(
       core_id_t sender, ShmemMsg* shmem_msg)
 {
-   PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
+   ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
    IntPtr address = shmem_msg->getAddress();
    core_id_t requester = INVALID_CORE_ID;
-   if ((shmem_msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REP) || (shmem_msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP)
-         || (shmem_msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REP) )
+   if ((shmem_msg_type == ShmemMsg::EX_REP) || (shmem_msg_type == ShmemMsg::SH_REP)
+         || (shmem_msg_type == ShmemMsg::UPGRADE_REP)
+         || (shmem_msg_type == ShmemMsg::SUB_REP))
    {
       ScopedLock sl(getLock()); // Keep lock when handling m_directory_waiters
       CacheDirectoryWaiter* request = m_master->m_directory_waiters.front(address);
@@ -1802,37 +1824,42 @@ MYLOG("begin");
 
    switch (shmem_msg_type)
    {
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REP:
+      case ShmemMsg::EX_REP:
 MYLOG("EX REP<%u @ %lx", sender, address);
-         processExRepFromDramDirectory(sender, requester, shmem_msg);
+         processExRepFromGMM(sender, requester, shmem_msg);
          break;
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP:
+      case ShmemMsg::SUB_REP:
+MYLOG("EX REP<%u @ %lx", sender, address);
+         processSubRepFromGMM(sender, requester, shmem_msg);
+         break;
+      case ShmemMsg::SH_REP:
 MYLOG("SH REP<%u @ %lx", sender, address);
-         processShRepFromDramDirectory(sender, requester, shmem_msg);
+         processShRepFromGMM(sender, requester, shmem_msg);
          break;
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REP:
+      case ShmemMsg::UPGRADE_REP:
 MYLOG("UPGR REP<%u @ %lx", sender, address);
-         processUpgradeRepFromDramDirectory(sender, requester, shmem_msg);
+         processUpgradeRepFromGMM(sender, requester, shmem_msg);
          break;
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REQ:
+      case ShmemMsg::INV_REQ:
 MYLOG("INV REQ<%u @ %lx", sender, address);
-         processInvReqFromDramDirectory(sender, shmem_msg);
+         processInvReqFromGMM(sender, shmem_msg);
          break;
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::FLUSH_REQ:
+      case ShmemMsg::FLUSH_REQ:
 MYLOG("FLUSH REQ<%u @ %lx", sender, address);
-         processFlushReqFromDramDirectory(sender, shmem_msg);
+         processFlushReqFromGMM(sender, shmem_msg);
          break;
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::WB_REQ:
+      case ShmemMsg::WB_REQ:
 MYLOG("WB REQ<%u @ %lx", sender, address);
-         processWbReqFromDramDirectory(sender, shmem_msg);
+         processWbReqFromGMM(sender, shmem_msg);
          break;
       default:
          LOG_PRINT_ERROR("Unrecognized msg type: %u", shmem_msg_type);
          break;
    }
 
-   if ((shmem_msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::EX_REP) || (shmem_msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP)
-         || (shmem_msg_type == PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REP) )
+   if ((shmem_msg_type == ShmemMsg::EX_REP) || (shmem_msg_type == ShmemMsg::SH_REP)
+         || (shmem_msg_type == ShmemMsg::UPGRADE_REP)
+         || (shmem_msg_type == ShmemMsg::SUB_REP))
    {
       getLock().acquire(); // Keep lock when handling m_directory_waiters
       while(! m_master->m_directory_waiters.empty(address)) {
@@ -1847,7 +1874,7 @@ MYLOG("WB REQ<%u @ %lx", sender, address);
 
             // We (the master cache) are sending the upgrade request in place of request->cache_cntlr,
             // so use their ShmemPerf* rather than ours
-            processUpgradeReqToDirectory(address, request->cache_cntlr->m_shmem_perf, ShmemPerfModel::_SIM_THREAD);
+            processUpgradeReqToGMM(address, request->cache_cntlr->m_shmem_perf, ShmemPerfModel::_SIM_THREAD);
 
             releaseStackLock(address);
             return;
@@ -1898,25 +1925,40 @@ MYLOG("done");
 }
 
 void
-VirtCacheCntlr::processExRepFromDramDirectory(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
+VirtCacheCntlr::processExRepFromGMM(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
 {
    // Forward data from message to LLC, don't incur LLC data access time (writeback will be done asynchronously)
    //getMemoryManager()->incrElapsedTime(m_mem_component, CachePerfModel::ACCESS_CACHE_DATA_AND_TAGS);
-MYLOG("processExRepFromDramDirectory l%d", m_mem_component);
+MYLOG("processExRepFromGMM l%d", m_mem_component);
 
    IntPtr address = shmem_msg->getAddress();
    Byte* data_buf = shmem_msg->getDataBuf();
 
    insertCacheBlock(address, CacheState::EXCLUSIVE, data_buf, requester, ShmemPerfModel::_SIM_THREAD);
-MYLOG("processExRepFromDramDirectory l%d end", m_mem_component);
+MYLOG("processExRepFromGMM l%d end", m_mem_component);
 }
 
 void
-VirtCacheCntlr::processShRepFromDramDirectory(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
+VirtCacheCntlr::processSubRepFromGMM(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
 {
    // Forward data from message to LLC, don't incur LLC data access time (writeback will be done asynchronously)
    //getMemoryManager()->incrElapsedTime(m_mem_component, CachePerfModel::ACCESS_CACHE_DATA_AND_TAGS);
-MYLOG("processShRepFromDramDirectory l%d", m_mem_component);
+MYLOG("processSubRepFromGMM l%d", m_mem_component);
+
+   IntPtr address = shmem_msg->getAddress();
+   Byte* data_buf = shmem_msg->getDataBuf();
+
+   CacheBlockInfo* cache_block_info = insertCacheBlock(address, CacheState::EXCLUSIVE, data_buf, requester, ShmemPerfModel::_SIM_THREAD);
+   cache_block_info->setOption(CacheBlockInfo::SUBSCRIBED);
+MYLOG("processSubRepFromGMM l%d end", m_mem_component);
+}
+
+void
+VirtCacheCntlr::processShRepFromGMM(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
+{
+   // Forward data from message to LLC, don't incur LLC data access time (writeback will be done asynchronously)
+   //getMemoryManager()->incrElapsedTime(m_mem_component, CachePerfModel::ACCESS_CACHE_DATA_AND_TAGS);
+MYLOG("processShRepFromGMM l%d", m_mem_component);
 
    IntPtr address = shmem_msg->getAddress();
    Byte* data_buf = shmem_msg->getDataBuf();
@@ -1926,9 +1968,9 @@ MYLOG("processShRepFromDramDirectory l%d", m_mem_component);
 }
 
 void
-VirtCacheCntlr::processUpgradeRepFromDramDirectory(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
+VirtCacheCntlr::processUpgradeRepFromGMM(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg)
 {
-MYLOG("processShRepFromDramDirectory l%d", m_mem_component);
+MYLOG("processShRepFromGMM l%d", m_mem_component);
    // We now have the only copy. Change to a writeable state.
    IntPtr address = shmem_msg->getAddress();
    CacheState::cstate_t cstate = getCacheState(address);
@@ -1958,10 +2000,10 @@ MYLOG("processShRepFromDramDirectory l%d", m_mem_component);
 }
 
 void
-VirtCacheCntlr::processInvReqFromDramDirectory(core_id_t sender, ShmemMsg* shmem_msg)
+VirtCacheCntlr::processInvReqFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
-MYLOG("processInvReqFromDramDirectory l%d", m_mem_component);
+MYLOG("processInvReqFromGMM l%d", m_mem_component);
 
    CacheState::cstate_t cstate = getCacheState(address);
    if (cstate != CacheState::INVALID)
@@ -1980,7 +2022,7 @@ MYLOG("processInvReqFromDramDirectory l%d", m_mem_component);
 
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), ShmemPerf::REMOTE_CACHE_INV);
 
-      getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REP,
+      getMemoryManager()->sendMsg(ShmemMsg::INV_REP,
             MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
@@ -1998,10 +2040,10 @@ MYLOG("invalid @ %lx, hoping eviction message is underway", address);
 }
 
 void
-VirtCacheCntlr::processFlushReqFromDramDirectory(core_id_t sender, ShmemMsg* shmem_msg)
+VirtCacheCntlr::processFlushReqFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
-MYLOG("processFlushReqFromDramDirectory l%d", m_mem_component);
+MYLOG("processFlushReqFromGMM l%d", m_mem_component);
 
    CacheState::cstate_t cstate = getCacheState(address);
    if (cstate != CacheState::INVALID)
@@ -2018,7 +2060,7 @@ MYLOG("processFlushReqFromDramDirectory l%d", m_mem_component);
 
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), ShmemPerf::REMOTE_CACHE_WB);
 
-      getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::FLUSH_REP,
+      getMemoryManager()->sendMsg(ShmemMsg::FLUSH_REP,
             MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
@@ -2036,10 +2078,10 @@ MYLOG("invalid @ %lx, hoping eviction message is underway", address);
 }
 
 void
-VirtCacheCntlr::processWbReqFromDramDirectory(core_id_t sender, ShmemMsg* shmem_msg)
+VirtCacheCntlr::processWbReqFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
-MYLOG("processWbReqFromDramDirectory l%d", m_mem_component);
+MYLOG("processWbReqFromGMM l%d", m_mem_component);
 
    CacheState::cstate_t cstate = getCacheState(address);
    if (cstate != CacheState::INVALID)
@@ -2059,7 +2101,7 @@ MYLOG("processWbReqFromDramDirectory l%d", m_mem_component);
 
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), ShmemPerf::REMOTE_CACHE_FWD);
 
-      getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::WB_REP,
+      getMemoryManager()->sendMsg(ShmemMsg::WB_REP,
             MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,

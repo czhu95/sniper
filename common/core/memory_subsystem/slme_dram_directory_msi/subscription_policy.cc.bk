@@ -1,4 +1,4 @@
-#include "replication_policy.h"
+#include "subscription_policy.h"
 #include "policy.h"
 #include "log.h"
 #include "global_memory_manager.h"
@@ -23,66 +23,63 @@
 namespace SingleLevelMemory
 {
 
-char DStateString(DirectoryState::dstate_t state) {
-   switch(state)
-   {
-      case DirectoryState::UNCACHED:  return 'U';
-      case DirectoryState::SHARED:    return 'S';
-      case DirectoryState::EXCLUSIVE: return 'E';
-      case DirectoryState::OWNED:     return 'O';
-      case DirectoryState::MODIFIED:  return 'M';
-      default:                        return '?';
-   }
-}
-
-DirectoryMSIPolicy::DirectoryMSIPolicy(
+SubscriptionPolicy::SubscriptionPolicy(
       core_id_t core_id,
       GlobalMemoryManager* memory_manager,
-      AddressHomeLookup* dram_controller_home_lookup,
-      UInt32 dram_directory_total_entries,
-      UInt32 dram_directory_associativity,
-      UInt32 replica_block_size,
-      UInt32 dram_directory_max_num_sharers,
-      UInt32 dram_directory_max_hw_sharers,
-      String dram_directory_type_str,
-      ComponentLatency dram_directory_cache_access_time,
       ShmemPerfModel* shmem_perf_model):
    PolicyBase(memory_manager),
-   m_dram_controller_home_lookup(dram_controller_home_lookup),
    m_core_id(core_id),
-   m_replica_block_size(replica_block_size),
-   m_shmem_perf_model(shmem_perf_model),
-   forward(0),
-   forward_failed(0)
+   m_mode(Mode::READWRITE),
+   m_shmem_perf_model(shmem_perf_model)
 {
    m_dram_directory_req_queue_list = new ReqQueueList();
 }
 
-DirectoryMSIPolicy::~DirectoryMSIPolicy()
+SubscriptionPolicy::~SubscriptionPolicy()
 {
    delete m_dram_directory_req_queue_list;
 }
 
 void
-DirectoryMSIPolicy::handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
+SubscriptionPolicy::handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
 {
-   LOG_ERROR("Should not reach here.");
+   LOG_PRINT_ERROR("Should not reach here.");
 }
 
 void
-DirectoryMSIPolicy::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
+SubscriptionPolicy::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
 {
-   PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
+   ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
    SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD);
    IntPtr va = shmem_msg->getAddress();
-   IntPtr pa = shmem_msg->getPhysAddress();
-   core_id_t requester = shmem_msg->getRequester();
 
-   MYLOG("begin for address %lx, pa %lx, %d in queue, requester is %u", va, pa, m_dram_directory_req_queue_list->size(va), requester);
+   MYLOG("begin for address %lx, pa %lx, %d in queue, requester is %u", va,
+         shmem_msg->getPhysAddress(), m_dram_directory_req_queue_list->size(va),
+         shmem_msg->getRequester());
 
    switch (shmem_msg_type)
    {
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ:
+      case ShmemMsg::EX_REQ:
+      {
+         MYLOG("E REQ<%u @ %lx", sender, va);
+
+         // Add request onto a queue
+         ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
+
+         m_dram_directory_req_queue_list->enqueue(va, shmem_req);
+         MYLOG("ENqueued E REQ for address %lx", va );
+
+         if (m_dram_directory_req_queue_list->size(va) == 1)
+         {
+            processExReqFromL2Cache(shmem_req);
+         }
+         else
+         {
+            MYLOG("S REQ (%lx) not handled because of outstanding request in the queue", va);
+         }
+
+      }
+      case ShmemMsg::SH_REQ:
       {
          MYLOG("S REQ<%u @ %lx", sender, va);
 
@@ -102,9 +99,19 @@ DirectoryMSIPolicy::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
          break;
       }
 
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::INV_REP:
+      case ShmemMsg::INV_REP:
          MYLOG("INV REP<%u @ %lx", sender, va);
          processInvRepFromL2Cache(sender, shmem_msg);
+         break;
+
+      case ShmemMsg::FLUSH_REP:
+         MYLOG("FLUSH REP<%u @ %lx", sender, va);
+         processFlushRepFromL2Cache(sender, shmem_msg);
+         break;
+
+      case ShmemMsg::WB_REP:
+         MYLOG("WB REP<%u @ %lx", sender, va);
+         processWbRepFromL2Cache(sender, shmem_msg);
          break;
 
       default:
@@ -115,14 +122,14 @@ MYLOG("done for %lx", va);
 }
 
 void
-DirectoryMSIPolicy::handleMsgFromDRAM(core_id_t sender, ShmemMsg* shmem_msg)
+SubscriptionPolicy::handleMsgFromDRAM(core_id_t sender, ShmemMsg* shmem_msg)
 {
    MYLOG("Start");
-   PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
+   ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
 
    switch (shmem_msg_type)
    {
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_READ_REP:
+      case ShmemMsg::DRAM_READ_REP:
          processDRAMReply(sender, shmem_msg);
          break;
 
@@ -134,7 +141,7 @@ DirectoryMSIPolicy::handleMsgFromDRAM(core_id_t sender, ShmemMsg* shmem_msg)
 }
 
 void
-DirectoryMSIPolicy::processNextReqFromL2Cache(IntPtr address)
+SubscriptionPolicy::processNextReqFromL2Cache(IntPtr address)
 {
    MYLOG("Start processNextReqFromL2Cache(%lx): %d in Queue", address, m_dram_directory_req_queue_list->size(address) );
 
@@ -152,7 +159,7 @@ DirectoryMSIPolicy::processNextReqFromL2Cache(IntPtr address)
       // Update the Shared Mem Cycle Counts appropriately
       getShmemPerfModel()->updateElapsedTime(shmem_req->getTime(), ShmemPerfModel::_SIM_THREAD);
 
-      if (shmem_req->getShmemMsg()->getMsgType() == PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ)
+      if (shmem_req->getShmemMsg()->getMsgType() == ShmemMsg::SH_REQ)
       {
          MYLOG("A new SH_REQ for address(%lx) found", address);
          processShReqFromL2Cache(shmem_req);
@@ -164,23 +171,22 @@ DirectoryMSIPolicy::processNextReqFromL2Cache(IntPtr address)
 }
 
 void
-DirectoryMSIPolicy::processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf)
+SubscriptionPolicy::processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf)
 {
    IntPtr address = shmem_req->getShmemMsg()->getAddress();
    core_id_t requester = shmem_req->getShmemMsg()->getRequester();
 
    MYLOG("Start @ %lx", address);
    updateShmemPerf(shmem_req);
-   retrieveDataAndSendToL2Cache(PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP, requester, address, NULL, shmem_req->getShmemMsg());
+   retrieveDataAndSendToL2Cache(ShmemMsg::SH_REP, requester, address, NULL, shmem_req->getShmemMsg());
 
    MYLOG("End @ %lx", address);
 }
 
 void
-DirectoryMSIPolicy::retrieveDataAndSendToL2Cache(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t reply_msg_type,
+SubscriptionPolicy::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
       core_id_t receiver, IntPtr address, Byte* cached_data_buf, ShmemMsg *orig_shmem_msg)
 {
-
    MYLOG("Start @ %lx", address);
    assert(m_dram_directory_req_queue_list->size(address) > 0);
    ShmemReq* shmem_req = m_dram_directory_req_queue_list->front(address);
@@ -189,7 +195,7 @@ DirectoryMSIPolicy::retrieveDataAndSendToL2Cache(PrL1PrL2DramDirectoryMSI::Shmem
    // This could be directly forwarded to the cache or passed
    // through the Dram Directory Controller
 
-   if (shmem_req->getShmemMsg()->getMsgType() == PrL1PrL2DramDirectoryMSI::ShmemMsg::UPGRADE_REQ)
+   if (shmem_req->getShmemMsg()->getMsgType() == ShmemMsg::UPGRADE_REQ)
    {
       MYLOG("Have to get data from DRAM while doing an UPGRADE_REQ: lost data somehow\n");
    }
@@ -205,7 +211,7 @@ DirectoryMSIPolicy::retrieveDataAndSendToL2Cache(PrL1PrL2DramDirectoryMSI::Shmem
                            m_dram_controller_home_lookup->getHome(phys_address);
 
    MYLOG("Sending request to DRAM for the data");
-   getMemoryManager()->sendMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::DRAM_READ_REQ,
+   getMemoryManager()->sendMsg(ShmemMsg::DRAM_READ_REQ,
          MemComponent::GMM, MemComponent::DRAM,
          receiver /* requester */,
          dram_node /* receiver */,
@@ -219,7 +225,7 @@ DirectoryMSIPolicy::retrieveDataAndSendToL2Cache(PrL1PrL2DramDirectoryMSI::Shmem
 }
 
 void
-DirectoryMSIPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
+SubscriptionPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
 
@@ -234,14 +240,13 @@ DirectoryMSIPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
 
    //   Which reply type to use?
 
-   PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t reply_msg_type;
+   ShmemMsg::msg_t reply_msg_type;
    updateShmemPerf(shmem_req, ShmemPerf::TD_ACCESS);
 
    switch(shmem_req->getShmemMsg()->getMsgType())
    {
-      case PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ:
-         assert(curr_dstate == DirectoryState::SHARED || curr_dstate == DirectoryState::EXCLUSIVE);
-         reply_msg_type = PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REP;
+      case ShmemMsg::SH_REQ:
+         reply_msg_type = ShmemMsg::SH_REP;
          break;
       default:
          LOG_PRINT_ERROR("Unsupported request type: %u", shmem_req->getShmemMsg()->getMsgType());
@@ -258,6 +263,7 @@ DirectoryMSIPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
       assert(m_replicas.count(repl_addr) == 0);
       m_replicas.insert(repl_addr);
       LOG_PRINT_WARNING("Remote DRAM access: va = %p", address);
+      MYLOG("Replicate @ %lx", repl_addr);
    }
 
    //   Send reply
@@ -267,7 +273,7 @@ DirectoryMSIPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
          shmem_req->getShmemMsg()->getRequester() /* requester */,
          shmem_req->getShmemMsg()->getRequester() /* receiver */,
          address,
-         shmem_msg->getDataBuf(), getCacheBlockSize(),
+         shmem_msg->getDataBuf(), getMemoryManager()->getCacheBlockSize(),
          hit_where,
          shmem_req->getShmemMsg()->getPerf(),
          ShmemPerfModel::_SIM_THREAD);
@@ -279,7 +285,7 @@ DirectoryMSIPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
 }
 
 void
-DirectoryMSIPolicy::processInvRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
+SubscriptionPolicy::processInvRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
 
@@ -294,7 +300,7 @@ DirectoryMSIPolicy::processInvRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_m
       shmem_req->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD));
       getShmemPerfModel()->updateElapsedTime(shmem_req->getTime(), ShmemPerfModel::_SIM_THREAD);
 
-      if (shmem_req->getShmemMsg()->getMsgType() == PrL1PrL2DramDirectoryMSI::ShmemMsg::SH_REQ)
+      if (shmem_req->getShmemMsg()->getMsgType() == ShmemMsg::SH_REQ)
       {
          if (shmem_req->getWaitForData())
          {

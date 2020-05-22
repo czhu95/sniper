@@ -3,7 +3,6 @@
 #include "mem_component.h"
 #include "fixed_types.h"
 #include "hit_where.h"
-#include "../pr_l1_pr_l2_dram_directory_msi/shmem_msg.h"
 
 class ShmemPerf;
 
@@ -11,8 +10,40 @@ namespace SingleLevelMemory
 {
    class ShmemMsg
    {
+      public:
+         enum msg_t
+         {
+            INVALID_MSG_TYPE = 0,
+            MIN_MSG_TYPE,
+            // Cache > tag directory
+            EX_REQ = MIN_MSG_TYPE,
+            SH_REQ,
+            UPGRADE_REQ,
+            INV_REQ,
+            FLUSH_REQ,
+            WB_REQ,
+            SUB_REQ,
+            // Tag directory > cache
+            EX_REP,
+            SH_REP,
+            UPGRADE_REP,
+            INV_REP,
+            FLUSH_REP,
+            WB_REP,
+            SUB_REP,
+            NULLIFY_REQ,
+            // Tag directory > DRAM
+            DRAM_READ_REQ,
+            DRAM_WRITE_REQ,
+            // DRAM > tag directory
+            DRAM_READ_REP,
+
+            MAX_MSG_TYPE = NULLIFY_REQ,
+            NUM_MSG_TYPES = MAX_MSG_TYPE - MIN_MSG_TYPE + 1
+         };
+
       private:
-         PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t m_msg_type;
+         ShmemMsg::msg_t m_msg_type;
          MemComponent::component_t m_sender_mem_component;
          MemComponent::component_t m_receiver_mem_component;
          core_id_t m_requester;
@@ -26,7 +57,7 @@ namespace SingleLevelMemory
       public:
          ShmemMsg() = delete;
          ShmemMsg(ShmemPerf* perf);
-         ShmemMsg(PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t msg_type,
+         ShmemMsg(ShmemMsg::msg_t msg_type,
                MemComponent::component_t sender_mem_component,
                MemComponent::component_t receiver_mem_component,
                core_id_t requester,
@@ -46,7 +77,7 @@ namespace SingleLevelMemory
          // Modeling
          UInt32 getModeledLength();
 
-         PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t getMsgType() { return m_msg_type; }
+         ShmemMsg::msg_t getMsgType() { return m_msg_type; }
          MemComponent::component_t getSenderMemComponent() { return m_sender_mem_component; }
          MemComponent::component_t getReceiverMemComponent() { return m_receiver_mem_component; }
          core_id_t getRequester() { return m_requester; }
