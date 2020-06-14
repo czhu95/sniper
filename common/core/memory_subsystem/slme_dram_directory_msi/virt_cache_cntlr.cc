@@ -11,6 +11,7 @@
 #include "shmem_perf.h"
 #include "thread.h"
 #include "../pr_l1_pr_l2_dram_directory_msi/shmem_msg.h"
+#include "subscription_policy.h"
 
 #include <cstring>
 
@@ -339,6 +340,13 @@ MYLOG("----------------------------------------------");
 MYLOG("%c%c %lx+%u..+%u", mem_op_type == Core::WRITE ? 'W' : 'R', mem_op_type == Core::READ_EX ? 'X' : ' ', ca_address, offset, data_length);
 LOG_ASSERT_ERROR((ca_address & (getCacheBlockSize() - 1)) == 0, "address at cache line + %x", ca_address & (getCacheBlockSize() - 1));
 LOG_ASSERT_ERROR(offset + data_length <= getCacheBlockSize(), "access until %u > %u", offset + data_length, getCacheBlockSize());
+
+   if (dynamic_cast<GlobalMemoryManager *>(Sim()->getCoreManager()->getCoreFromID(0)->getMemoryManager())->policyLookup(ca_address)->getId() == 2)
+   {
+      // LOG_PRINT_WARNING("Subsription policy handles %lx", ca_address);
+      hit_where = (HitWhere::where_t)m_mem_component;
+      return hit_where;
+   }
 
    #ifdef PRIVATE_L2_OPTIMIZATION
    /* if this is the second part of an atomic operation: we already have the lock, don't lock again */

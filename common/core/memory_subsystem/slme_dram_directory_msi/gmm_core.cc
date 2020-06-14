@@ -48,6 +48,8 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
 
    // Look up policy
    PolicyBase *policy = getMemoryManager()->policyLookup(address);
+   if (policy->getId() == 2)
+      policy = getMemoryManager()->policyLookup(0);
 
    MemComponent::component_t sender_mem_component = shmem_msg->getSenderMemComponent();
 

@@ -29,7 +29,7 @@ ReplicationPolicy::ReplicationPolicy(
       AddressHomeLookup* dram_controller_home_lookup,
       UInt32 replica_block_size,
       ShmemPerfModel* shmem_perf_model):
-   PolicyBase(memory_manager),
+   PolicyBase(memory_manager, 1),
    m_dram_controller_home_lookup(dram_controller_home_lookup),
    m_core_id(core->getId()),
    m_replica_block_size(replica_block_size),

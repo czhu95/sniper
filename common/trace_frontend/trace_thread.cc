@@ -56,8 +56,8 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    , m_cleanup(cleanup)
    , m_started(false)
    , m_flushed(false)
-   , m_stopped(false)
    , m_virt_cache(false)
+   , m_stopped(false)
 {
 
    //if (!xed_initialized)
@@ -433,9 +433,15 @@ void TraceThread::handleVCPUResumeFunc()
    if (!m_started)
       signalStarted();
 
-   ScopedLock sl(Sim()->getThreadManager()->getLock());
    SubsecondTime time_wake = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
-   Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time_wake, NULL);
+   {
+      ScopedLock sl(Sim()->getThreadManager()->getLock());
+      Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time_wake, NULL);
+   }
+
+   Core *core = m_thread->getCore();
+   LOG_ASSERT_ERROR(core, "Thread not resumed on the core.");
+   core->getPerformanceModel()->queuePseudoInstruction(new SyncInstruction(time_wake, SyncInstruction::SYSCALL));
 }
 
 SubsecondTime TraceThread::getCurrentTime() const

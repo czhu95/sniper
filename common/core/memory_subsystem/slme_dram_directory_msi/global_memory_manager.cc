@@ -14,6 +14,7 @@
 #include "topology_info.h"
 #include "directory_msi_policy.h"
 #include "replication_policy.h"
+#include "subscription_policy.h"
 
 #if 0
    extern Lock iolock;
@@ -398,9 +399,9 @@ GlobalMemoryManager::sendMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t
 {
 MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, receiver, receiver_mem_component);
    assert((data_buf == NULL) == (data_length == 0));
-   bool send_magic = msg_type != ShmemMsg::SH_REQ;
+   // bool send_magic = msg_type != ShmemMsg::SH_REQ;
 
-   // bool send_magic = false;
+   bool send_magic = false;
 
    ShmemMsg shmem_msg(msg_type, sender_mem_component, receiver_mem_component, requester, vaddr, paddr, data_buf, data_length, perf);
    shmem_msg.setWhere(where);
@@ -620,10 +621,10 @@ GlobalMemoryManager::policyLookup(IntPtr address)
 void
 GlobalMemoryManager::Command(uint64_t cmd_type, IntPtr start, uint64_t arg1)
 {
-   // if (cmd_type == 0)
-   //    createSegment(start, arg1);
-   // else if (cmd_type == 1)
-   //    segmentAssignPolicy(start, arg1);
+   if (cmd_type == 0)
+      createSegment(start, arg1);
+   else if (cmd_type == 1)
+      segmentAssignPolicy(start, arg1);
 }
 
 void
@@ -664,6 +665,10 @@ GlobalMemoryManager::segmentAssignPolicy(IntPtr start, uint64_t policy_id)
                   m_dram_controller_home_lookup,
                   1024 * 1024,
                   getShmemPerfModel());
+         }
+         else if (policy_id == 2)
+         {
+            seg.m_policy = new SubscriptionPolicy(this);
          }
          else
          {

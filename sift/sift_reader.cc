@@ -322,9 +322,9 @@ bool Sift::Reader::Read(Instruction &inst)
                uint64_t vp, pp;
                input->read(reinterpret_cast<char*>(&vp), sizeof(uint64_t));
                input->read(reinterpret_cast<char*>(&pp), sizeof(uint64_t));
-               std::cout << "[DEBUG:" << m_id << "] va2pa 0x"
-                         << std::hex << vp << " -> 0x"
-                         << pp << std::dec << std::endl;
+               // std::cout << "[DEBUG:" << m_id << "] va2pa 0x"
+               //           << std::hex << vp << " -> 0x"
+               //           << pp << std::dec << std::endl;
                {
 #ifndef __PIN__
                  std::unique_lock lock(vcache_mtx);
