@@ -46,7 +46,7 @@ DirectoryMSIPolicy::DirectoryMSIPolicy(
       String dram_directory_type_str,
       ComponentLatency dram_directory_cache_access_time,
       ShmemPerfModel* shmem_perf_model):
-   PolicyBase(memory_manager),
+   PolicyBase(memory_manager, 0),
    m_dram_controller_home_lookup(dram_controller_home_lookup),
    m_core_id(core_id),
    m_cache_block_size(cache_block_size),

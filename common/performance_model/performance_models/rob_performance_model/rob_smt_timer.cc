@@ -548,14 +548,15 @@ bool RobSmtTimer::tryDispatch(smtthread_id_t thread_num, SubsecondTime &next_eve
 {
    // Dispatch up to dispatchWidth instructions, all from a single thread
    RobThread *thread = m_rob_threads[thread_num];
+   SmtThread *smt_thread = m_threads[thread_num];
    uint32_t instrs_dispatched = 0, uops_dispatched = 0;
 
    // Unless we set a new stall condition later on, assume no stall occured
    thread->m_cpiCurrentFrontEndStall = NULL;
 
-   while(thread->m_num_in_rob < currentWindowSize)
+   while(thread->m_num_in_rob < currentWindowSize && thread->m_num_in_rob < thread->rob.size())
    {
-      LOG_ASSERT_ERROR(thread->m_num_in_rob < thread->rob.size(), "Expected sufficient uops for dispatching in pre-ROB buffer, but didn't find them");
+      LOG_ASSERT_ERROR(!smt_thread->running || thread->m_num_in_rob < thread->rob.size(), "Expected sufficient uops for dispatching in pre-ROB buffer, but didn't find them");
 
       RobEntry *entry = &thread->rob.at(thread->m_num_in_rob);
       DynamicMicroOp &uop = *entry->uop;
@@ -726,7 +727,8 @@ SubsecondTime RobSmtTimer::doDispatch()
          else
             cpiComponent = thread->m_cpiCurrentFrontEndStall;
       }
-      else if (!smt_thread->running || thread->now > now)
+      // else if (!smt_thread->running || thread->now > now)
+      else if (thread->now > now)
       {
          // thread should not be idle, nor should it live way in the future because it just woke from idle
          cpiComponent = &thread->m_cpiIdle;
@@ -822,6 +824,7 @@ void RobSmtTimer::issueInstruction(smtthread_id_t thread_num, uint64_t idx, Subs
    if (uop.getMicroOp()->isStore())
    {
       last_store_done = std::max(last_store_done, cycle_done);
+      // LOG_ASSERT_ERROR(last_store_done < SubsecondTime::MS(20), "Store taking too long");
       cycle_depend = now + 1ul;                            // For stores, forward the result immediately
       // Stores can be removed from the ROB once they're issued to the memory hierarchy
       // Dependent operations such as SFENCE and synchronization instructions need to wait until last_store_done
@@ -1132,7 +1135,7 @@ bool RobSmtTimer::canExecute(smtthread_id_t thread_num)
    if (thread->frontend_stalled_until > now     // front-end is stalled due to I-cache miss or branch misprediction
        || thread->now > now                     // core lives way in the future because it just woke from idle
        || thread->m_num_in_rob >= currentWindowSize // ROB is full
-       || !smt_thread->running                       // thread is not running
+       // || !smt_thread->running                       // thread is not running
    )
    {
       return false;
@@ -1149,13 +1152,14 @@ bool RobSmtTimer::canExecute()
    for(smtthread_id_t thread_num = 0; thread_num < m_threads.size(); ++thread_num)
    {
       RobThread *thread = m_rob_threads[thread_num];
+      SmtThread *smt_thread = m_threads[thread_num];
 
       if (!canExecute(thread_num))
       {
          // Thread will not dispatch, no need to consider it
          continue;
       }
-      else if (thread->rob.size() < thread->m_num_in_rob + 2*dispatchWidth)
+      else if (smt_thread->running && thread->rob.size() < thread->m_num_in_rob + 2*dispatchWidth)
       {
          // We don't have enough instructions to dispatch <dispatchWidth> new ones. Ask for more before doing anything this cycle.
          return false;
@@ -1212,6 +1216,7 @@ SubsecondTime RobSmtTimer::executeCycle()
       #endif
       will_skip = true;
       skip = next_event - now;
+      LOG_ASSERT_WARNING(skip > SubsecondTime::NS(1000), "Instruction took too long (%lu).", skip.getNS());
    }
    else
    {
