@@ -113,17 +113,18 @@ Config::Config(SimulationMode mode)
 
    m_knob_clock_skew_minimization_scheme = ClockSkewMinimizationObject::parseScheme(Sim()->getCfg()->getString("clock_skew_minimization/scheme"));
 
-   m_total_cores = m_knob_total_cores;
+   m_app_cores = m_knob_total_cores;
+   m_gmm_cores = Sim()->getCfg()->getInt("general/gmm_cores");
 
    m_singleton = this;
 
-   assert(m_total_cores > 0);
+   assert(m_app_cores > 0);
 
    //No, be sure to configure a valid NumApplicationCores count
    //// Adjust the number of cores corresponding to the network model we use
    //m_total_cores = getNearestAcceptableCoreCount(m_total_cores);
 
-   m_core_id_length = computeCoreIDLength(m_total_cores);
+   m_core_id_length = computeCoreIDLength(m_app_cores);
 }
 
 Config::~Config()
@@ -132,12 +133,17 @@ Config::~Config()
 
 UInt32 Config::getTotalCores()
 {
-   return m_total_cores;
+   return m_app_cores + m_gmm_cores;
 }
 
 UInt32 Config::getApplicationCores()
 {
-   return getTotalCores();
+   return m_app_cores;
+}
+
+UInt32 Config::getGMMCores()
+{
+   return m_gmm_cores;
 }
 
 UInt32 Config::computeCoreIDLength(UInt32 core_count)

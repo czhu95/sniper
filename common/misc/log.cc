@@ -26,7 +26,7 @@ static String formatFileName(const char* s)
 }
 
 Log::Log(Config &config)
-   : _coreCount(config.getTotalCores())
+   : _coreCount(config.getApplicationCores())
    , _startTime(0)
 {
    initFileDescriptors();

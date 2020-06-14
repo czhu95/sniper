@@ -20,7 +20,8 @@ class MemComponent
          */
          LAST_LEVEL_CACHE = 20,
          TAG_DIR,
-         GMM,
+         GMM_CORE,
+         GMM_CACHE,
          NUCA_CACHE,
          DRAM_CACHE,
          DRAM,

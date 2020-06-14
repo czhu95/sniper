@@ -19,6 +19,8 @@ SimThread::~SimThread()
 void SimThread::run()
 {
    core_id_t core_id = Sim()->getCoreManager()->registerSimThread(CoreManager::SIM_THREAD);
+   if (core_id == INVALID_CORE_ID)
+      core_id = Sim()->getGMMCoreManager()->registerSimThread(CoreManager::SIM_THREAD);
 
    // Set thread name for Sniper-in-Sniper simulations
    String threadName = String("sim-") + itostr(core_id);
@@ -26,7 +28,12 @@ void SimThread::run()
 
    LOG_PRINT("Sim thread starting...");
 
-   Network *net = Sim()->getCoreManager()->getCoreFromID(core_id)->getNetwork();
+   Network *net;
+   if (core_id < (core_id_t)Sim()->getConfig()->getApplicationCores())
+      net = Sim()->getCoreManager()->getCoreFromID(core_id)->getNetwork();
+   else
+      net = Sim()->getGMMCoreManager()->getCoreFromID(core_id)->getNetwork();
+
    volatile bool cont = true;
 
    Sim()->getSimThreadManager()->simThreadStartCallback();

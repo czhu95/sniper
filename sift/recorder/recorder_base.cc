@@ -214,7 +214,7 @@ static VOID traceCallback(TRACE trace, void *v)
 #else
                                      IARG_REG_VALUE, REG_GBX,
 #endif
-                                     IARG_REG_VALUE, REG_GCX, IARG_END);
+                                     IARG_REG_VALUE, REG_GCX, IARG_REG_VALUE, REG_GDX, IARG_END);
          }
 
          // Handle emulated syscalls

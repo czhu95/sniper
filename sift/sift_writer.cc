@@ -17,7 +17,7 @@
 #include <unistd.h>
 
 // Enable (>0) to print out everything we write
-#define VERBOSE 0
+#define VERBOSE 2
 #define VERBOSE_HEX 0
 #define VERBOSE_ICACHE 0
 
@@ -1392,4 +1392,57 @@ void Sift::Writer::GMMCommand(uint64_t cmd_type, uintptr_t segment, uint64_t arg
 
    sift_assert(respRec.Other.zero == 0);
    sift_assert(respRec.Other.type == RecOtherGMMCommandResponse);
+}
+
+void Sift::Writer::SendGMMCoreMessage(Sift::GMMCoreMessage &msg)
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write GMMCoreMessage" << std::endl;
+   #endif
+
+   if (!output)
+   {
+      return;
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherGMMCoreMessage;
+   rec.Other.size = sizeof(Sift::GMMCoreMessage);
+
+   output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   output->write(reinterpret_cast<char*>(&msg), sizeof(Sift::GMMCoreMessage));
+   output->flush();
+}
+
+void Sift::Writer::PullGMMCoreMessage(Sift::GMMCoreMessage &msg)
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write GMMCorePull" << std::endl;
+   #endif
+
+   if (!output)
+   {
+      return;
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherGMMCorePull;
+   rec.Other.size = 0; //sizeof(Sift::GMMCoreMessage);
+
+   output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   output->flush();
+
+   initResponse();
+
+   // wait for reply
+   Record respRec;
+   response->read(reinterpret_cast<char*>(&respRec), sizeof(rec.Other));
+
+   sift_assert(respRec.Other.zero == 0);
+   sift_assert(respRec.Other.type == RecOtherGMMCorePullResponse);
+   sift_assert(respRec.Other.size == sizeof(GMMCoreMessage));
+
+   response->read(reinterpret_cast<char*>(&msg), sizeof(GMMCoreMessage));
 }

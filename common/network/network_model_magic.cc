@@ -19,7 +19,7 @@ NetworkModelMagic::routePacket(const NetPacket &pkt, std::vector<Hop> &nextHops)
    // A latency of '1'
    if (pkt.receiver == NetPacket::BROADCAST)
    {
-      UInt32 total_cores = Config::getSingleton()->getTotalCores();
+      UInt32 total_cores = Config::getSingleton()->getApplicationCores();
 
       for (SInt32 i = 0; i < (SInt32) total_cores; i++)
       {
@@ -54,7 +54,7 @@ NetworkModelMagic::processReceivedPacket(NetPacket &pkt)
    else // Other Packet types
       requester = pkt.sender;
 
-   LOG_ASSERT_ERROR((requester >= 0) && (requester < (core_id_t) Config::getSingleton()->getTotalCores()),
+   LOG_ASSERT_ERROR((requester >= 0) && (requester < (core_id_t) Config::getSingleton()->getApplicationCores()),
          "requester(%i)", requester);
 
    if ( (!_enabled) || (requester >= (core_id_t) Config::getSingleton()->getApplicationCores()) )

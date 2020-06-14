@@ -71,7 +71,7 @@ void Simulator::createDecoder()
         dlm = dl::DL_MODE_32;
       else
         LOG_PRINT_ERROR("Unknown mode %s, should be 32 or 64 (bits).", mode.c_str());
-      // Get syntax 
+      // Get syntax
       dl::dl_syntax dls;
       String syntax = Sim()->getCfg()->getString("general/syntax");
       if (dla == dl::DL_ARCH_RISCV)
@@ -122,6 +122,8 @@ Simulator::Simulator()
    , m_faultinjection_manager(NULL)
    , m_rtn_tracer(NULL)
    , m_memory_tracker(NULL)
+   , m_gmm_trace_manager(NULL)
+   , m_gmm_core_manager(NULL)
    , m_running(false)
    , m_inst_mode_output(true)
 {
@@ -169,8 +171,12 @@ void Simulator::start()
       else
          m_trace_manager = new SystemTraceManager();
    }
-   else
-      m_trace_manager = NULL;
+
+   if (Sim()->getCfg()->getBool("traceinput/gmm_enabled"))
+   {
+      m_gmm_trace_manager = new GMMTraceManager();
+      m_gmm_core_manager = new GMMCoreManager();
+   }
 
    CircularLog::enableCallbacks();
 
@@ -183,6 +189,9 @@ void Simulator::start()
    m_hooks_manager->init();
    if (m_trace_manager)
       m_trace_manager->init();
+
+   if (m_gmm_trace_manager)
+      m_gmm_trace_manager->init();
 
    m_sim_thread_manager->spawnSimThreads();
 
@@ -281,14 +290,23 @@ void Simulator::enablePerformanceModels()
 {
    if (Sim()->getFastForwardPerformanceManager() && InstMode::inst_mode_roi == InstMode::DETAILED)
       Sim()->getFastForwardPerformanceManager()->disable();
-   for (UInt32 i = 0; i < Sim()->getConfig()->getTotalCores(); i++)
+   for (UInt32 i = 0; i < Sim()->getConfig()->getApplicationCores(); i++)
       Sim()->getCoreManager()->getCoreFromID(i)->enablePerformanceModels();
+
+   if (Sim()->getGMMCoreManager())
+      for (UInt32 i = Sim()->getConfig()->getApplicationCores(); i < Sim()->getConfig()->getTotalCores(); i++)
+         Sim()->getGMMCoreManager()->getCoreFromID(i)->enablePerformanceModels();
 }
 
 void Simulator::disablePerformanceModels()
 {
-   for (UInt32 i = 0; i < Sim()->getConfig()->getTotalCores(); i++)
+   for (UInt32 i = 0; i < Sim()->getConfig()->getApplicationCores(); i++)
       Sim()->getCoreManager()->getCoreFromID(i)->disablePerformanceModels();
+
+   if (Sim()->getGMMCoreManager())
+      for (UInt32 i = Sim()->getConfig()->getApplicationCores(); i < Sim()->getConfig()->getTotalCores(); i++)
+         Sim()->getGMMCoreManager()->getCoreFromID(i)->disablePerformanceModels();
+
    if (Sim()->getFastForwardPerformanceManager() && InstMode::inst_mode_roi == InstMode::DETAILED)
       Sim()->getFastForwardPerformanceManager()->enable();
 }

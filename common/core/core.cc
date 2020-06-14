@@ -104,6 +104,25 @@ Core::Core(SInt32 id)
    m_performance_model = PerformanceModel::create(this);
 }
 
+Core::Core(SInt32 id, int dummy __attribute__((unused)))
+   : m_core_id(id)
+   , m_dvfs_domain(Sim()->getDvfsManager()->getCoreDomain(id))
+   , m_thread(NULL)
+   , m_bbv(id)
+   , m_topology_info(new TopologyInfo(id))
+   , m_cheetah_manager(Sim()->getCfg()->getBool("core/cheetah/enabled") ? new CheetahManager(id) : NULL)
+   , m_core_state(Core::IDLE)
+   , m_icache_last_block(-1)
+   , m_spin_loops(0)
+   , m_spin_instructions(0)
+   , m_spin_elapsed_time(SubsecondTime::Zero())
+   , m_instructions(0)
+   , m_instructions_callback(UINT64_MAX)
+   , m_instructions_hpi_callback(0)
+   , m_instructions_hpi_last(0)
+{
+}
+
 Core::~Core()
 {
    if (m_cheetah_manager)

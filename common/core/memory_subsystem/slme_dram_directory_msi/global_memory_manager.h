@@ -22,7 +22,7 @@ class DramCache;
 
 namespace SingleLevelMemory
 {
-   class GMMCore;
+   class GMMCoreFast;
    class PolicyBase;
    class DirectoryMSIPolicy;
    class Segment;
@@ -35,9 +35,8 @@ namespace SingleLevelMemory
       protected:
          VirtCacheCntlr* m_cache_cntlrs[MemComponent::LAST_LEVEL_CACHE + 1];
          DramCache* m_dram_cache;
-         GMMCore* m_gmm_core;
+         GMMCoreFast* m_gmm_core;
          PrL1PrL2DramDirectoryMSI::DramCntlr* m_dram_cntlr;
-         AddressHomeLookup* m_gmm_home_lookup;
          AddressHomeLookup* m_dram_controller_home_lookup;
 
          core_id_t m_core_id_master;
@@ -57,6 +56,8 @@ namespace SingleLevelMemory
          DirectoryMSIPolicy* m_default_policy;
          std::vector<Segment> m_segment_table;
          Lock m_segment_table_lock;
+
+         UInt32 m_shared_cores;
 
          // Performance Models
          CachePerfModel* m_cache_perf_models[MemComponent::LAST_LEVEL_CACHE + 1];
@@ -84,7 +85,6 @@ namespace SingleLevelMemory
          Cache* getL1DCache() { return getCache(MemComponent::L1_DCACHE); }
          Cache* getLastLevelCache() { return getCache(MemComponent::LAST_LEVEL_CACHE); }
          PrL1PrL2DramDirectoryMSI::DramCntlr* getDramCntlr() { return m_dram_cntlr; }
-         AddressHomeLookup* getGMMHomeLookup() { return m_gmm_home_lookup; }
          AddressHomeLookup* getDramControllerHomeLookup() { return m_dram_controller_home_lookup; }
 
          VirtCacheCntlr* getCacheCntlrAt(core_id_t core_id, MemComponent::component_t mem_component) { return m_all_cache_cntlrs[CoreComponentType(core_id, mem_component)]; }
@@ -126,5 +126,7 @@ namespace SingleLevelMemory
 
          void Command(uint64_t cmd_type, IntPtr start, uint64_t arg1) override;
          PolicyBase *policyLookup(IntPtr address);
+
+         core_id_t getGMMFromId(core_id_t core_id);
    };
 }

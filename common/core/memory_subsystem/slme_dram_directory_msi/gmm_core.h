@@ -1,40 +1,54 @@
 #pragma once
 
-#include "dram_directory_cache.h"
-#include "req_queue_list.h"
-#include "dram_cntlr.h"
-#include "address_home_lookup.h"
+#include "core.h"
+#include "fixed_types.h"
 #include "shmem_req.h"
-#include "shmem_msg.h"
+#include "shmem_perf_model.h"
 #include "shmem_perf.h"
-#include "mem_component.h"
-#include "memory_manager_base.h"
-#include "coherency_protocol.h"
 #include "segment_table.h"
+#include "lock.h"
+#include "cond.h"
 
-class NucaCache;
+#include <queue>
+
+class AddressHomeLookup;
 
 namespace SingleLevelMemory
 {
+   class DirectoryMSIPolicy;
+   class PolicyBase;
+   class ShmemMsg;
    class GlobalMemoryManager;
 
-   class GMMCore
+   class GMMCore : public Core
    {
-      private:
-         // Functional Models
-         GlobalMemoryManager* m_memory_manager;
-         ReqQueueList* m_dram_directory_req_queue_list;
+      public:
+         GMMCore(SInt32 id);
+         ~GMMCore() override;
 
-         core_id_t m_core_id;
-         // UInt32 m_cache_block_size;
+         void handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg);
+        // int getId() const override;
+         void segmentAssignPolicy(IntPtr start, uint64_t policy_id);
+         void createSegment(IntPtr start, uint64_t length);
+         void Command(uint64_t cmd_type, IntPtr start, uint64_t arg1);
+         PolicyBase* policyLookup(IntPtr address);
 
-         ShmemPerfModel* m_shmem_perf_model;
+         void enqueueMessage(const ShmemMsg *shmem_msg);
+         void dequeueMessage(ShmemMsg *shmem_msg);
 
-         SegmentTable* m_segment_table;
+      protected:
+         DirectoryMSIPolicy* m_directory_policy;
+         std::vector<Segment> m_segment_table;
+         Lock m_segment_table_lock;
+         AddressHomeLookup *m_dram_controller_home_lookup;
 
-         // UInt32 getCacheBlockSize() { return m_cache_block_size; }
-         GlobalMemoryManager* getMemoryManager() { return m_memory_manager; }
-         ShmemPerfModel* getShmemPerfModel() { return m_shmem_perf_model; }
+         GlobalMemoryManager *m_global_memory_manager;
+
+         std::queue<ShmemMsg> m_msg_queue;
+         Lock m_msg_queue_lock;
+         ConditionVariable m_msg_cond;
+
+         GlobalMemoryManager* getGlobalMemoryManager() { return m_global_memory_manager; }
 
          void updateShmemPerf(ShmemReq *shmem_req, ShmemPerf::shmem_times_type_t reason = ShmemPerf::UNKNOWN)
          {
@@ -45,13 +59,5 @@ namespace SingleLevelMemory
             shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), reason);
          }
 
-      public:
-         GMMCore(core_id_t core_id,
-               GlobalMemoryManager* memory_manager,
-               ShmemPerfModel* shmem_perf_model);
-         ~GMMCore();
-
-         void handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg);
    };
-
 }

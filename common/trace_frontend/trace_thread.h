@@ -31,7 +31,7 @@ class DynamicInstruction;
 
 class TraceThread : public Runnable
 {
-   private:
+   protected:
       // In multi-process mode, we want each process to have its own private memory space
       // Therefore, perform a virtual to physical address mapping by including the core_id
       // Virtual addresses are converted to physical addresses by pasting the core_id at
@@ -82,7 +82,7 @@ class TraceThread : public Runnable
       bool m_virt_cache;
 
       void run();
-      void signalStarted();
+      virtual void signalStarted();
       static Sift::Mode __handleInstructionCountFunc(void* arg, uint32_t icount)
       { return ((TraceThread*)arg)->handleInstructionCountFunc(icount); }
       static void __handleCacheOnlyFunc(void* arg, uint8_t icount, Sift::CacheOnlyType type, uint64_t eip, uint64_t address)
@@ -154,7 +154,7 @@ class TraceThread : public Runnable
       bool m_stopped;
 
       TraceThread(Thread *thread, SubsecondTime time_start, String tracefile, String responsefile, app_id_t app_id, bool cleanup);
-      ~TraceThread();
+      virtual ~TraceThread();
 
       void spawn();
       void stop() { m_stop = true; }
@@ -163,5 +163,24 @@ class TraceThread : public Runnable
       Thread* getThread() const { return m_thread; }
       void handleAccessMemory(Core::lock_signal_t lock_signal, Core::mem_op_t mem_op_type, IntPtr d_addr, char* data_buffer, UInt32 data_size);
 };
+
+
+class GMMTraceThread : public TraceThread
+{
+   protected:
+      void signalStarted() override;
+      void handleGMMCoreMessageFunc(Sift::GMMCoreMessage &msg);
+      void handleGMMCorePullFunc(Sift::GMMCoreMessage &msg);
+
+      static void __handleGMMCoreMessageFunc(void *arg, Sift::GMMCoreMessage &msg)
+      { return ((GMMTraceThread*)arg)->handleGMMCoreMessageFunc(msg);  }
+      static void __handleGMMCorePullFunc(void *arg, Sift::GMMCoreMessage &msg)
+      { return ((GMMTraceThread*)arg)->handleGMMCorePullFunc(msg);  }
+
+   public:
+      GMMTraceThread(Thread *thread, SubsecondTime time_start, String tracefile, String responsefile, app_id_t app_id, bool cleanup);
+      ~GMMTraceThread() override {};
+};
+
 
 #endif // __TRACE_THREAD_H

@@ -209,7 +209,10 @@ void ThreadStatsManager::ThreadStats::update(SubsecondTime time, bool init)
    }
    else
    {
-      Core *core = Sim()->getCoreManager()->getCoreFromID(m_core_id);
+      Core *core = m_core_id < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
+                      Sim()->getCoreManager()->getCoreFromID(m_core_id) :
+                      Sim()->getGMMCoreManager()->getCoreFromID(m_core_id);
+
       m_elapsed_time += time_delta;
       time_by_core[core->getId()] += core->getPerformanceModel()->getNonIdleElapsedTime().getFS() - m_last[ELAPSED_NONIDLE_TIME];
       insn_by_core[core->getId()] += core->getPerformanceModel()->getInstructionCount() - m_last[INSTRUCTIONS];

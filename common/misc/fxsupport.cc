@@ -34,7 +34,7 @@ Fxsupport::~Fxsupport()
 void Fxsupport::init()
 {
    assert (m_singleton == NULL);
-   core_id_t core_count = Sim()->getConfig()->getTotalCores();
+   core_id_t core_count = Sim()->getConfig()->getApplicationCores();
    m_singleton = new Fxsupport (core_count);
 }
 

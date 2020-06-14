@@ -1,4 +1,5 @@
 #include "global_memory_manager.h"
+#include "gmm_core_fast.h"
 #include "gmm_core.h"
 #include "policy.h"
 #include "core_manager.h"
@@ -64,106 +65,173 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
 
    try
    {
-      m_cache_block_size = Sim()->getCfg()->getInt("perf_model/l1_icache/cache_block_size");
-
-      m_last_level_cache = (MemComponent::component_t)(Sim()->getCfg()->getInt("perf_model/cache/levels") - 2 + MemComponent::L2_CACHE);
-
-      smt_cores = Sim()->getCfg()->getInt("perf_model/core/logical_cpus");
-
-      for(UInt32 i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
+      if (core->getId() < (SInt32)Sim()->getConfig()->getApplicationCores())
       {
-         String configName, objectName;
-         switch((MemComponent::component_t)i) {
-            case MemComponent::L1_ICACHE:
-               configName = "l1_icache";
-               objectName = "L1-I";
-               break;
-            case MemComponent::L1_DCACHE:
-               configName = "l1_dcache";
-               objectName = "L1-D";
-               break;
-            default:
-               String level = itostr(i - MemComponent::L2_CACHE + 2);
-               configName = "l" + level + "_cache";
-               objectName = "L" + level;
-               break;
+         m_cache_block_size = Sim()->getCfg()->getInt("perf_model/l1_icache/cache_block_size");
+
+         m_last_level_cache = (MemComponent::component_t)(Sim()->getCfg()->getInt("perf_model/cache/levels") - 2 + MemComponent::L2_CACHE);
+
+         smt_cores = Sim()->getCfg()->getInt("perf_model/core/logical_cpus");
+
+         for(UInt32 i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
+         {
+
+            String configName, objectName;
+            switch((MemComponent::component_t)i) {
+               case MemComponent::L1_ICACHE:
+                  configName = "l1_icache";
+                  objectName = "L1-I";
+                  break;
+               case MemComponent::L1_DCACHE:
+                  configName = "l1_dcache";
+                  objectName = "L1-D";
+                  break;
+               default:
+                  String level = itostr(i - MemComponent::L2_CACHE + 2);
+                  configName = "l" + level + "_cache";
+                  objectName = "L" + level;
+                  break;
+            }
+
+            if (i == m_last_level_cache)
+               m_shared_cores = Sim()->getCfg()->getIntArray(   "perf_model/" + configName + "/shared_cores", core->getId()) * smt_cores;
+
+            const ComponentPeriod *clock_domain = NULL;
+            String domain_name = Sim()->getCfg()->getStringArray("perf_model/" + configName + "/dvfs_domain", core->getId());
+            if (domain_name == "core")
+               clock_domain = core->getDvfsDomain();
+            else if (domain_name == "global")
+               clock_domain = global_domain;
+            else
+               LOG_PRINT_ERROR("dvfs_domain %s is invalid", domain_name.c_str());
+
+            LOG_ASSERT_ERROR(Sim()->getCfg()->getInt("perf_model/" + configName + "/cache_block_size") == m_cache_block_size,
+                             "The cache block size of the %s is not the same as the l1_icache (%d)", configName.c_str(), m_cache_block_size);
+
+            cache_parameters[(MemComponent::component_t)i] = CacheParameters(
+               configName,
+               Sim()->getCfg()->getIntArray(   "perf_model/" + configName + "/cache_size", core->getId()),
+               Sim()->getCfg()->getIntArray(   "perf_model/" + configName + "/associativity", core->getId()),
+               getCacheBlockSize(),
+               Sim()->getCfg()->getStringArray("perf_model/" + configName + "/address_hash", core->getId()),
+               Sim()->getCfg()->getStringArray("perf_model/" + configName + "/replacement_policy", core->getId()),
+               Sim()->getCfg()->getBoolArray(  "perf_model/" + configName + "/perfect", core->getId()),
+               i == MemComponent::L1_ICACHE
+                  ? Sim()->getCfg()->getBoolArray(  "perf_model/" + configName + "/coherent", core->getId())
+                  : true,
+               ComponentLatency(clock_domain, Sim()->getCfg()->getIntArray("perf_model/" + configName + "/data_access_time", core->getId())),
+               ComponentLatency(clock_domain, Sim()->getCfg()->getIntArray("perf_model/" + configName + "/tags_access_time", core->getId())),
+               ComponentLatency(clock_domain, Sim()->getCfg()->getIntArray("perf_model/" + configName + "/writeback_time", core->getId())),
+               ComponentBandwidthPerCycle(clock_domain,
+                  i < (UInt32)m_last_level_cache
+                     ? Sim()->getCfg()->getIntArray("perf_model/" + configName + "/next_level_read_bandwidth", core->getId())
+                     : 0),
+               Sim()->getCfg()->getStringArray("perf_model/" + configName + "/perf_model_type", core->getId()),
+               Sim()->getCfg()->getBoolArray(  "perf_model/" + configName + "/writethrough", core->getId()),
+               Sim()->getCfg()->getIntArray(   "perf_model/" + configName + "/shared_cores", core->getId()) * smt_cores,
+               Sim()->getCfg()->getStringArray("perf_model/" + configName + "/prefetcher", core->getId()),
+               i == MemComponent::L1_DCACHE
+                  ? Sim()->getCfg()->getIntArray(   "perf_model/" + configName + "/outstanding_misses", core->getId())
+                  : 0
+            );
+            cache_names[(MemComponent::component_t)i] = objectName;
          }
 
-         const ComponentPeriod *clock_domain = NULL;
-         String domain_name = Sim()->getCfg()->getStringArray("perf_model/" + configName + "/dvfs_domain", core->getId());
-         if (domain_name == "core")
-            clock_domain = core->getDvfsDomain();
-         else if (domain_name == "global")
-            clock_domain = global_domain;
-         else
-            LOG_PRINT_ERROR("dvfs_domain %s is invalid", domain_name.c_str());
+         nuca_enable = Sim()->getCfg()->getBoolArray(  "perf_model/nuca/enabled", core->getId());
+         if (nuca_enable)
+         {
+            nuca_parameters = CacheParameters(
+               "nuca",
+               Sim()->getCfg()->getIntArray(   "perf_model/nuca/cache_size", core->getId()),
+               Sim()->getCfg()->getIntArray(   "perf_model/nuca/associativity", core->getId()),
+               getCacheBlockSize(),
+               Sim()->getCfg()->getStringArray("perf_model/nuca/address_hash", core->getId()),
+               Sim()->getCfg()->getStringArray("perf_model/nuca/replacement_policy", core->getId()),
+               false, true,
+               ComponentLatency(global_domain, Sim()->getCfg()->getIntArray("perf_model/nuca/data_access_time", core->getId())),
+               ComponentLatency(global_domain, Sim()->getCfg()->getIntArray("perf_model/nuca/tags_access_time", core->getId())),
+               ComponentLatency(global_domain, 0), ComponentBandwidthPerCycle(global_domain, 0), "", false, 0, "", 0 // unused
+            );
+         }
 
-         LOG_ASSERT_ERROR(Sim()->getCfg()->getInt("perf_model/" + configName + "/cache_block_size") == m_cache_block_size,
-                          "The cache block size of the %s is not the same as the l1_icache (%d)", configName.c_str(), m_cache_block_size);
+         // Dram Directory Cache
+         dram_directory_total_entries = Sim()->getCfg()->getInt("perf_model/dram_directory/total_entries");
+         dram_directory_associativity = Sim()->getCfg()->getInt("perf_model/dram_directory/associativity");
+         dram_directory_max_num_sharers = Sim()->getConfig()->getApplicationCores();
+         dram_directory_max_hw_sharers = Sim()->getCfg()->getInt("perf_model/dram_directory/max_hw_sharers");
+         dram_directory_type_str = Sim()->getCfg()->getString("perf_model/dram_directory/directory_type");
+         dram_directory_home_lookup_param = Sim()->getCfg()->getInt("perf_model/dram_directory/home_lookup_param");
+         dram_directory_cache_access_time = ComponentLatency(global_domain, Sim()->getCfg()->getInt("perf_model/dram_directory/directory_cache_access_time"));
 
-         cache_parameters[(MemComponent::component_t)i] = CacheParameters(
-            configName,
-            Sim()->getCfg()->getIntArray(   "perf_model/" + configName + "/cache_size", core->getId()),
-            Sim()->getCfg()->getIntArray(   "perf_model/" + configName + "/associativity", core->getId()),
-            getCacheBlockSize(),
-            Sim()->getCfg()->getStringArray("perf_model/" + configName + "/address_hash", core->getId()),
-            Sim()->getCfg()->getStringArray("perf_model/" + configName + "/replacement_policy", core->getId()),
-            Sim()->getCfg()->getBoolArray(  "perf_model/" + configName + "/perfect", core->getId()),
-            i == MemComponent::L1_ICACHE
-               ? Sim()->getCfg()->getBoolArray(  "perf_model/" + configName + "/coherent", core->getId())
-               : true,
-            ComponentLatency(clock_domain, Sim()->getCfg()->getIntArray("perf_model/" + configName + "/data_access_time", core->getId())),
-            ComponentLatency(clock_domain, Sim()->getCfg()->getIntArray("perf_model/" + configName + "/tags_access_time", core->getId())),
-            ComponentLatency(clock_domain, Sim()->getCfg()->getIntArray("perf_model/" + configName + "/writeback_time", core->getId())),
-            ComponentBandwidthPerCycle(clock_domain,
-               i < (UInt32)m_last_level_cache
-                  ? Sim()->getCfg()->getIntArray("perf_model/" + configName + "/next_level_read_bandwidth", core->getId())
-                  : 0),
-            Sim()->getCfg()->getStringArray("perf_model/" + configName + "/perf_model_type", core->getId()),
-            Sim()->getCfg()->getBoolArray(  "perf_model/" + configName + "/writethrough", core->getId()),
-            Sim()->getCfg()->getIntArray(   "perf_model/" + configName + "/shared_cores", core->getId()) * smt_cores,
-            Sim()->getCfg()->getStringArray("perf_model/" + configName + "/prefetcher", core->getId()),
-            i == MemComponent::L1_DCACHE
-               ? Sim()->getCfg()->getIntArray(   "perf_model/" + configName + "/outstanding_misses", core->getId())
-               : 0
-         );
-         cache_names[(MemComponent::component_t)i] = objectName;
+         // Dram Cntlr
+         dram_direct_access = Sim()->getCfg()->getBool("perf_model/dram/direct_access");
 
-         /* Non-application threads will be distributed at 1 per process, probably not as shared_cores per process.
-            Still, they need caches (for inter-process data communication, not for modeling target timing).
-            Make them non-shared so we don't create process-spanning shared caches. */
-         if (getCore()->getId() >= (core_id_t) Sim()->getConfig()->getApplicationCores())
-            cache_parameters[(MemComponent::component_t)i].shared_cores = 1;
       }
-
-      nuca_enable = Sim()->getCfg()->getBoolArray(  "perf_model/nuca/enabled", core->getId());
-      if (nuca_enable)
+      else
       {
-         nuca_parameters = CacheParameters(
-            "nuca",
-            Sim()->getCfg()->getIntArray(   "perf_model/nuca/cache_size", core->getId()),
-            Sim()->getCfg()->getIntArray(   "perf_model/nuca/associativity", core->getId()),
-            getCacheBlockSize(),
-            Sim()->getCfg()->getStringArray("perf_model/nuca/address_hash", core->getId()),
-            Sim()->getCfg()->getStringArray("perf_model/nuca/replacement_policy", core->getId()),
-            false, true,
-            ComponentLatency(global_domain, Sim()->getCfg()->getIntArray("perf_model/nuca/data_access_time", core->getId())),
-            ComponentLatency(global_domain, Sim()->getCfg()->getIntArray("perf_model/nuca/tags_access_time", core->getId())),
-            ComponentLatency(global_domain, 0), ComponentBandwidthPerCycle(global_domain, 0), "", false, 0, "", 0 // unused
-         );
+         m_gmm_present = true;
+         m_cache_block_size = Sim()->getCfg()->getInt("perf_model/gmm/l1_icache/cache_block_size");
+
+         m_last_level_cache = (MemComponent::component_t)(Sim()->getCfg()->getInt("perf_model/gmm/cache/levels") - 2 + MemComponent::L2_CACHE);
+
+         smt_cores = 1; // Sim()->getCfg()->getInt("perf_model/core/logical_cpus");
+
+         for(UInt32 i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
+         {
+            String configName, objectName;
+            switch((MemComponent::component_t)i) {
+               case MemComponent::L1_ICACHE:
+                  configName = "l1_icache";
+                  objectName = "L1-I";
+                  break;
+               case MemComponent::L1_DCACHE:
+                  configName = "l1_dcache";
+                  objectName = "L1-D";
+                  break;
+               default:
+                  String level = itostr(i - MemComponent::L2_CACHE + 2);
+                  configName = "l" + level + "_cache";
+                  objectName = "L" + level;
+                  break;
+            }
+
+            const ComponentPeriod *clock_domain = NULL;
+            clock_domain = core->getDvfsDomain();
+
+            LOG_ASSERT_ERROR(Sim()->getCfg()->getInt("perf_model/gmm/" + configName + "/cache_block_size") == m_cache_block_size,
+                             "The cache block size of the %s is not the same as the l1_icache (%d)", configName.c_str(), m_cache_block_size);
+
+            cache_parameters[(MemComponent::component_t)i] = CacheParameters(
+               configName,
+               Sim()->getCfg()->getIntArray(   "perf_model/gmm/" + configName + "/cache_size", core->getId()),
+               Sim()->getCfg()->getIntArray(   "perf_model/gmm/" + configName + "/associativity", core->getId()),
+               getCacheBlockSize(),
+               Sim()->getCfg()->getStringArray("perf_model/gmm/" + configName + "/address_hash", core->getId()),
+               Sim()->getCfg()->getStringArray("perf_model/gmm/" + configName + "/replacement_policy", core->getId()),
+               Sim()->getCfg()->getBoolArray(  "perf_model/gmm/" + configName + "/perfect", core->getId()),
+               i == MemComponent::L1_ICACHE
+                  ? Sim()->getCfg()->getBoolArray(  "perf_model/gmm/" + configName + "/coherent", core->getId())
+                  : true,
+               ComponentLatency(clock_domain, Sim()->getCfg()->getIntArray("perf_model/gmm/" + configName + "/data_access_time", core->getId())),
+               ComponentLatency(clock_domain, Sim()->getCfg()->getIntArray("perf_model/gmm/" + configName + "/tags_access_time", core->getId())),
+               ComponentLatency(clock_domain, Sim()->getCfg()->getIntArray("perf_model/gmm/" + configName + "/writeback_time", core->getId())),
+               ComponentBandwidthPerCycle(clock_domain,
+                  i < (UInt32)m_last_level_cache
+                     ? Sim()->getCfg()->getIntArray("perf_model/gmm/" + configName + "/next_level_read_bandwidth", core->getId())
+                     : 0),
+               Sim()->getCfg()->getStringArray("perf_model/gmm/" + configName + "/perf_model_type", core->getId()),
+               Sim()->getCfg()->getBoolArray(  "perf_model/gmm/" + configName + "/writethrough", core->getId()),
+               Sim()->getCfg()->getIntArray(   "perf_model/gmm/" + configName + "/shared_cores", core->getId()) * smt_cores,
+               Sim()->getCfg()->getStringArray("perf_model/gmm/" + configName + "/prefetcher", core->getId()),
+               i == MemComponent::L1_DCACHE
+                  ? Sim()->getCfg()->getIntArray(   "perf_model/gmm/" + configName + "/outstanding_misses", core->getId())
+                  : 0
+            );
+            cache_names[(MemComponent::component_t)i] = objectName;
+         }
+
+         dram_directory_home_lookup_param = Sim()->getCfg()->getInt("perf_model/dram_directory/home_lookup_param");
       }
-
-      // Dram Directory Cache
-      dram_directory_total_entries = Sim()->getCfg()->getInt("perf_model/dram_directory/total_entries");
-      dram_directory_associativity = Sim()->getCfg()->getInt("perf_model/dram_directory/associativity");
-      dram_directory_max_num_sharers = Sim()->getConfig()->getTotalCores();
-      dram_directory_max_hw_sharers = Sim()->getCfg()->getInt("perf_model/dram_directory/max_hw_sharers");
-      dram_directory_type_str = Sim()->getCfg()->getString("perf_model/dram_directory/directory_type");
-      dram_directory_home_lookup_param = Sim()->getCfg()->getInt("perf_model/dram_directory/home_lookup_param");
-      dram_directory_cache_access_time = ComponentLatency(global_domain, Sim()->getCfg()->getInt("perf_model/dram_directory/directory_cache_access_time"));
-
-      // Dram Cntlr
-      dram_direct_access = Sim()->getCfg()->getBool("perf_model/dram/direct_access");
    }
    catch(...)
    {
@@ -173,11 +241,22 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
    m_user_thread_sem = new Semaphore(0);
    m_network_thread_sem = new Semaphore(0);
 
-   m_core_list_with_dram_controllers = getCoreListWithMemoryControllers();
-   String gmm_locations = Sim()->getCfg()->getString("perf_model/dram_directory/locations");
 
-   m_core_list_with_gmm = m_core_list_with_dram_controllers;
-   m_gmm_home_lookup = new AddressHomeLookup(dram_directory_home_lookup_param, m_core_list_with_gmm, getCacheBlockSize());
+   if (Sim()->getConfig()->getGMMCores())
+   {
+      for (core_id_t core_id = Sim()->getConfig()->getApplicationCores();
+           core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); core_id ++)
+      {
+         m_core_list_with_dram_controllers.push_back(core_id);
+      }
+      m_core_list_with_gmm.clear();
+   }
+   else
+   {
+      m_core_list_with_dram_controllers = getCoreListWithMemoryControllers();
+      m_core_list_with_gmm = m_core_list_with_dram_controllers;
+   }
+
    m_dram_controller_home_lookup = new AddressHomeLookup(dram_directory_home_lookup_param, m_core_list_with_dram_controllers, getCacheBlockSize());
 
    // if (m_core->getId() == 0)
@@ -216,7 +295,7 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
                dram_directory_type_str,
                dram_directory_cache_access_time,
                getShmemPerfModel());
-         m_gmm_core = new GMMCore(getCore()->getId(), this, getShmemPerfModel());
+         m_gmm_core = new GMMCoreFast(getCore()->getId(), this, getShmemPerfModel());
          Sim()->getStatsManager()->logTopology("gmm-core", core->getId(), core->getId());
       }
    }
@@ -227,7 +306,6 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
          cache_names[(MemComponent::component_t)i],
          getCore()->getId(),
          this,
-         m_gmm_home_lookup,
          m_user_thread_sem,
          m_network_thread_sem,
          getCacheBlockSize(),
@@ -340,7 +418,6 @@ GlobalMemoryManager::~GlobalMemoryManager()
 
    delete m_user_thread_sem;
    delete m_network_thread_sem;
-   delete m_gmm_home_lookup;
    delete m_dram_controller_home_lookup;
 
    for(i = MemComponent::FIRST_LEVEL_CACHE; i <= (UInt32)m_last_level_cache; ++i)
@@ -533,7 +610,7 @@ MYLOG("begin");
       case MemComponent::LAST_LEVEL_CACHE:
          switch(sender_mem_component)
          {
-            case MemComponent::GMM:
+            case MemComponent::GMM_CORE:
                m_cache_cntlrs[m_last_level_cache]->handleMsgFromGMM(sender, shmem_msg);
                break;
 
@@ -544,15 +621,15 @@ MYLOG("begin");
          }
          break;
 
-      case MemComponent::GMM:
+      case MemComponent::GMM_CORE:
          LOG_ASSERT_ERROR(m_gmm_present, "GMM NOT present");
 
          switch(sender_mem_component)
          {
             case MemComponent::LAST_LEVEL_CACHE:
             case MemComponent::DRAM:
-            case MemComponent::GMM:
-               m_gmm_core->handleMsgFromNetwork(sender, shmem_msg);
+            case MemComponent::GMM_CORE:
+               dynamic_cast<GMMCore *>(getCore())->handleMsgFromNetwork(sender, shmem_msg);
                break;
 
             default:
@@ -567,7 +644,7 @@ MYLOG("begin");
 
          switch(sender_mem_component)
          {
-            case MemComponent::GMM:
+            case MemComponent::GMM_CORE:
             {
                DramCntlrInterface* dram_interface = m_dram_cache ? (DramCntlrInterface*)m_dram_cache : (DramCntlrInterface*)m_dram_cntlr;
                dram_interface->handleMsgFromGMM(sender, shmem_msg);
@@ -676,6 +753,16 @@ GlobalMemoryManager::segmentAssignPolicy(IntPtr start, uint64_t policy_id)
       }
    }
    m_segment_table_lock.release();
+}
+
+
+core_id_t
+GlobalMemoryManager::getGMMFromId(core_id_t core_id)
+{
+   if (core_id >= (SInt32)Sim()->getConfig()->getApplicationCores())
+      return core_id;
+   else
+      return Sim()->getConfig()->getApplicationCores() + core_id / m_shared_cores;
 }
 
 }

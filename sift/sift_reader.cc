@@ -49,6 +49,9 @@ Sift::Reader::Reader(const char *filename, const char *response_filename, uint32
    , handleICacheFlushArg(NULL)
    , handleGMMCmdFunc(NULL)
    , handleGMMCmdArg(NULL)
+   , handleGMMCoreMessageFunc(NULL)
+   , handleGMMCorePullFunc(NULL)
+   , handleGMMCoreArg(NULL)
    , filesize(0)
    , last_address(0)
    , icache()
@@ -322,9 +325,9 @@ bool Sift::Reader::Read(Instruction &inst)
                uint64_t vp, pp;
                input->read(reinterpret_cast<char*>(&vp), sizeof(uint64_t));
                input->read(reinterpret_cast<char*>(&pp), sizeof(uint64_t));
-               std::cout << "[DEBUG:" << m_id << "] va2pa 0x"
-                         << std::hex << vp << " -> 0x"
-                         << pp << std::dec << std::endl;
+               // std::cout << "[DEBUG:" << m_id << "] va2pa 0x"
+               //           << std::hex << vp << " -> 0x"
+               //           << pp << std::dec << std::endl;
                {
 #ifndef __PIN__
                  std::unique_lock lock(vcache_mtx);
@@ -576,9 +579,9 @@ bool Sift::Reader::Read(Instruction &inst)
             }
             case RecOtherGMMCommand:
             {
-               // #if VERBOSE > 0
+               #if VERBOSE > 0
                std::cerr << "[DEBUG:" << m_id << "] Read GMMCommand" << std::endl;
-               // #endif
+               #endif
                assert(rec.Other.size == 3 * sizeof(uint64_t));
                uint64_t a, b, c;
                input->read(reinterpret_cast<char*>(&a), sizeof(uint64_t));
@@ -592,6 +595,35 @@ bool Sift::Reader::Read(Instruction &inst)
                sendSimpleResponse(RecOtherGMMCommandResponse);
                break;
             }
+            case RecOtherGMMCoreMessage:
+            {
+               #if VERBOSE > 0
+               std::cerr << "[DEBUG:" << m_id << "] Read GMMCoreMessage" << std::endl;
+               #endif
+               assert(rec.Other.size == sizeof(GMMCoreMessage));
+               GMMCoreMessage msg;
+               input->read(reinterpret_cast<char*>(&msg), sizeof(GMMCoreMessage));
+               if (handleGMMCoreMessageFunc)
+               {
+                  handleGMMCoreMessageFunc(handleGMMCoreArg, msg);
+               }
+               break;
+            }
+            case RecOtherGMMCorePull:
+            {
+               #if VERBOSE > 0
+               std::cerr << "[DEBUG:" << m_id << "] Read GMMCoreMessage" << std::endl;
+               #endif
+               assert(rec.Other.size == 0);
+               GMMCoreMessage msg;
+               if (handleGMMCorePullFunc)
+               {
+                  handleGMMCorePullFunc(handleGMMCoreArg, msg);
+                  sendGMMCorePullResponse(msg);
+               }
+               break;
+            }
+
             default:
             {
                uint8_t *bytes = new uint8_t[rec.Other.size];
@@ -867,6 +899,26 @@ void Sift::Reader::sendEmuResponse(bool handled, EmuReply res)
    response->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
    response->write(reinterpret_cast<char*>(&result), sizeof(uint8_t));
    response->write(reinterpret_cast<char*>(&res), sizeof(EmuReply));
+   response->flush();
+}
+
+void Sift::Reader::sendGMMCorePullResponse(GMMCoreMessage msg)
+{
+   #if VERBOSE > 0
+   std::cerr << "[DEBUG:" << m_id << "] Write sendGMMCorePullResponse" << std::endl;
+   #endif
+
+   if (!initResponse())
+   {
+      std::cerr << "[SIFT:" << m_id << "] Error: initResponse failed\n";
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherGMMCorePullResponse;
+   rec.Other.size = sizeof(GMMCoreMessage);
+   response->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   response->write(reinterpret_cast<char*>(&msg), sizeof(GMMCoreMessage));
    response->flush();
 }
 

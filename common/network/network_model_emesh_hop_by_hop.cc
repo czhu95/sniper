@@ -241,8 +241,8 @@ NetworkModelEMeshHopByHop::processReceivedPacket(NetPacket& pkt)
    LOG_ASSERT_ERROR((requester >= 0) && (requester < (core_id_t) Config::getSingleton()->getTotalCores()),
          "requester(%i)", requester);
 
-   if ( (!m_enabled) || (requester >= (core_id_t) Config::getSingleton()->getApplicationCores())
-                     || (m_core_id >= (core_id_t) Config::getSingleton()->getApplicationCores()))
+   if ( (!m_enabled) || (requester >= (core_id_t) Config::getSingleton()->getTotalCores())
+                     || (m_core_id >= (core_id_t) Config::getSingleton()->getTotalCores()))
       return;
 
    SubsecondTime packet_latency = pkt.time - pkt.start_time;
@@ -305,8 +305,9 @@ NetworkModelEMeshHopByHop::computeDistance(core_id_t sender, core_id_t receiver)
 void
 NetworkModelEMeshHopByHop::computePosition(core_id_t core_id, SInt32 &x, SInt32 &y)
 {
-   x = (core_id / m_concentration) % m_mesh_width;
-   y = (core_id / m_concentration) / m_mesh_width;
+   core_id_t master_core = getMasterCoreId(core_id);
+   x = (master_core / m_concentration) % m_mesh_width;
+   y = (master_core / m_concentration) / m_mesh_width;
 }
 
 core_id_t
@@ -325,7 +326,7 @@ NetworkModelEMeshHopByHop::computeLatency(OutputDirection direction, SubsecondTi
    LOG_ASSERT_ERROR((direction >= 0) && (direction < NUM_OUTPUT_DIRECTIONS),
          "Invalid Direction(%u)", direction);
 
-   if ( (!m_enabled) || (requester >= (core_id_t) Config::getSingleton()->getApplicationCores()) )
+   if ( (!m_enabled) || (requester >= (core_id_t) Config::getSingleton()->getTotalCores()) )
       return SubsecondTime::Zero();
 
    SubsecondTime processing_time = computeProcessingTime(pkt_length);
@@ -389,13 +390,13 @@ NetworkModelEMeshHopByHop::getNextDest(SInt32 final_dest, OutputDirection& direc
    // Curently, do store-and-forward routing
    // FIXME: Should change this to wormhole routing eventually
 
-   if (final_dest >= (core_id_t)Config::getSingleton()->getApplicationCores())
+   if (final_dest >= (core_id_t)Config::getSingleton()->getTotalCores())
    {
       // We are a fake core (not an application core): warp straight to the destination
       direction = DESTINATION;
       return final_dest;
    }
-   else if (m_core_id / m_concentration == final_dest / m_concentration)
+   else if (getMasterCoreId(m_core_id) == getMasterCoreId(final_dest))
    {
       // Destination is self, a peer on our concentrated node
       direction = DESTINATION;
@@ -405,7 +406,7 @@ NetworkModelEMeshHopByHop::getNextDest(SInt32 final_dest, OutputDirection& direc
    {
       // We are a concentrated node but not the master: first send to master
       direction = PEER;
-      return m_core_id - m_core_id % m_concentration;
+      return getMasterCoreId(m_core_id);
    }
 
    SInt32 sx, sy, dx, dy;
@@ -554,4 +555,19 @@ NetworkModelEMeshHopByHop::computeMemoryControllerPositions(SInt32 num_memory_co
    }
 
    return (std::make_pair(true, core_id_list_with_memory_controllers));
+}
+
+core_id_t
+NetworkModelEMeshHopByHop::getMasterCoreId(core_id_t core_id)
+{
+   core_id_t app_cores = Config::getSingleton()->getApplicationCores();
+   if (core_id >= app_cores)
+   {
+      return (core_id - app_cores) * m_concentration;
+   }
+   else
+   {
+      return core_id - core_id % m_concentration;
+   }
+
 }

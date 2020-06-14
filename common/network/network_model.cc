@@ -15,7 +15,7 @@ NetworkModel::NetworkModel(Network *network, EStaticNetwork net_type)
    : _network(network)
    , m_collect_traffic_matrix(Sim()->getCfg()->getBool("network/collect_traffic_matrix"))
 {
-   UInt32 ncores = Sim()->getConfig()->getTotalCores();
+   UInt32 ncores = Sim()->getConfig()->getApplicationCores();
 
    if (m_collect_traffic_matrix)
    {

@@ -68,7 +68,7 @@ void updateState(Core *core, state_t state, SubsecondTime delay) {
 void init()
 {
    if (! pthread_stats_added) {
-      UInt32 num_cores = Sim()->getConfig()->getTotalCores();
+      UInt32 num_cores = Sim()->getConfig()->getApplicationCores();
       UInt32 pthread_counters_size = sizeof(struct pthread_counters_t) * num_cores;
       __attribute__((unused)) int rc = posix_memalign((void**)&pthread_counters, 64, pthread_counters_size); // Align by cache line size to prevent thread contention
       LOG_ASSERT_ERROR (rc == 0, "posix_memalign failed to allocate memory");

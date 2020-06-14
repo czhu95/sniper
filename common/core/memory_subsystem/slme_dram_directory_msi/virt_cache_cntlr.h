@@ -5,7 +5,6 @@
 #include "cache_cntlr.h"
 #include "prefetcher.h"
 #include "shared_cache_block_info.h"
-#include "address_home_lookup.h"
 #include "shmem_msg.h"
 #include "mem_component.h"
 #include "semaphore.h"
@@ -141,7 +140,6 @@ namespace SingleLevelMemory
          CacheMasterCntlr* m_master;
          VirtCacheCntlr* m_next_cache_cntlr;
          VirtCacheCntlr* m_last_level;
-         AddressHomeLookup* m_tag_directory_home_lookup;
          std::unordered_map<IntPtr, MemComponent::component_t> m_shmem_req_source_map;
          bool m_perfect;
          bool m_passthrough;
@@ -196,6 +194,8 @@ namespace SingleLevelMemory
 
          UInt32 m_shared_cores;        /**< Number of cores this cache is shared with */
          core_id_t m_core_id_master;   /**< Core id of the 'master' (actual) cache controller we're proxying */
+
+         core_id_t m_core_id_gmm;
 
          Semaphore* m_user_thread_sem;
          Semaphore* m_network_thread_sem;
@@ -282,9 +282,6 @@ namespace SingleLevelMemory
          Semaphore* getUserThreadSemaphore(void);
          Semaphore* getNetworkThreadSemaphore(void);
 
-         // Dram Directory Home Lookup
-         core_id_t getHome(IntPtr address) { return m_tag_directory_home_lookup->getHome(address); }
-
          VirtCacheCntlr* lastLevelCache(void);
 
       public:
@@ -293,7 +290,6 @@ namespace SingleLevelMemory
                String name,
                core_id_t core_id,
                GlobalMemoryManager* memory_manager,
-               AddressHomeLookup* tag_directory_home_lookup,
                Semaphore* user_thread_sem,
                Semaphore* network_thread_sem,
                UInt32 cache_block_size,

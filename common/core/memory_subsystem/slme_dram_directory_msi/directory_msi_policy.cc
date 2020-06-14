@@ -135,7 +135,7 @@ DirectoryMSIPolicy::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
    {
       MYLOG("Forward L2 REQ to home GMM %u", home_node);
       getMemoryManager()->sendMsg(shmem_msg_type,
-            MemComponent::GMM, MemComponent::GMM,
+            MemComponent::GMM_CORE, MemComponent::GMM_CORE,
             requester /* requester */,
             home_node /* receiver */,
             va,
@@ -335,7 +335,7 @@ DirectoryMSIPolicy::processDirectoryEntryAllocationReq(ShmemReq* shmem_req)
    // We get the entry with the lowest number of sharers
    DirectoryEntry* directory_entry = m_dram_directory_cache->replaceDirectoryEntry(replaced_address, address, true);
 
-   ShmemMsg nullify_msg(ShmemMsg::NULLIFY_REQ, MemComponent::GMM, MemComponent::GMM, requester, replaced_address, INVALID_ADDRESS, NULL, 0, &m_dummy_shmem_perf);
+   ShmemMsg nullify_msg(ShmemMsg::NULLIFY_REQ, MemComponent::GMM_CORE, MemComponent::GMM_CORE, requester, replaced_address, INVALID_ADDRESS, NULL, 0, &m_dummy_shmem_perf);
 
    ShmemReq* nullify_req = new ShmemReq(&nullify_msg, msg_time);
 
@@ -371,7 +371,7 @@ DirectoryMSIPolicy::processNullifyReq(ShmemReq* shmem_req)
       case DirectoryState::EXCLUSIVE:
       case DirectoryState::MODIFIED:
          getMemoryManager()->sendMsg(ShmemMsg::FLUSH_REQ,
-               MemComponent::GMM, MemComponent::L2_CACHE,
+               MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                requester /* requester */,
                directory_entry->getOwner() /* receiver */,
                address,
@@ -391,7 +391,7 @@ DirectoryMSIPolicy::processNullifyReq(ShmemReq* shmem_req)
                // Broadcast Invalidation Request to all cores
                // (irrespective of whether they are sharers or not)
                getMemoryManager()->broadcastMsg(ShmemMsg::INV_REQ,
-                     MemComponent::GMM, MemComponent::L2_CACHE,
+                     MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                      requester /* requester */,
                      address,
                      NULL, 0,
@@ -404,7 +404,7 @@ DirectoryMSIPolicy::processNullifyReq(ShmemReq* shmem_req)
                for (UInt32 i = 0; i < sharers_list_pair.second.size(); i++)
                {
                   getMemoryManager()->sendMsg(ShmemMsg::INV_REQ,
-                        MemComponent::GMM, MemComponent::L2_CACHE,
+                        MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                         requester /* requester */,
                         sharers_list_pair.second[i] /* receiver */,
                         address,
@@ -464,7 +464,7 @@ DirectoryMSIPolicy::processExReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_da
          assert(cached_data_buf == NULL);
          MYLOG("Send FLUSH_REQ>%d for %lx", directory_entry->getOwner(), address )
          getMemoryManager()->sendMsg(ShmemMsg::FLUSH_REQ,
-               MemComponent::GMM, MemComponent::L2_CACHE,
+               MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                requester /* requester */,
                directory_entry->getOwner() /* receiver */,
                address,
@@ -483,7 +483,7 @@ DirectoryMSIPolicy::processExReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_da
             // Broadcast Invalidation Request to all cores
             // (irrespective of whether they are sharers or not)
             getMemoryManager()->broadcastMsg(ShmemMsg::INV_REQ,
-                  MemComponent::GMM, MemComponent::L2_CACHE,
+                  MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                   requester /* requester */,
                   address,
                   NULL, 0,
@@ -497,7 +497,7 @@ DirectoryMSIPolicy::processExReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_da
             {
                MYLOG("Send INV_REQ>%d for %lx", sharers_list_pair.second[i], address )
                         getMemoryManager()->sendMsg(ShmemMsg::INV_REQ,
-                              MemComponent::GMM, MemComponent::L2_CACHE,
+                              MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                               requester /* requester */,
                               sharers_list_pair.second[i] /* receiver */,
                               address,
@@ -558,7 +558,7 @@ DirectoryMSIPolicy::processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_da
          MYLOG("WB_REQ>%d for %lx", directory_entry->getOwner(), address  )
                   assert(cached_data_buf == NULL);
          getMemoryManager()->sendMsg(ShmemMsg::WB_REQ,
-               MemComponent::GMM, MemComponent::L2_CACHE,
+               MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                requester /* requester */,
                directory_entry->getOwner() /* receiver */,
                address,
@@ -573,7 +573,7 @@ DirectoryMSIPolicy::processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_da
          MYLOG("WB_REQ>%d for %lx", directory_entry->getOwner(), address  )
          assert(cached_data_buf == NULL);
          getMemoryManager()->sendMsg(ShmemMsg::WB_REQ,
-               MemComponent::GMM, MemComponent::L2_CACHE,
+               MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                requester /* requester */,
                directory_entry->getOwner() /* receiver */,
                address,
@@ -605,7 +605,7 @@ DirectoryMSIPolicy::processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_da
                // Send a message to another sharer to invalidate that
                MYLOG("INV_REQ>%d for %lx because I could not add sharer", directory_entry->getOwner(), address  )
                getMemoryManager()->sendMsg(ShmemMsg::INV_REQ,
-                     MemComponent::GMM, MemComponent::L2_CACHE,
+                     MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                      requester /* requester */,
                      sharer_id /* receiver */,
                      address,
@@ -676,7 +676,7 @@ DirectoryMSIPolicy::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
       MYLOG("Already have the data that I need cached");
 
       getMemoryManager()->sendMsg(reply_msg_type,
-            MemComponent::GMM, MemComponent::L2_CACHE,
+            MemComponent::GMM_CORE, MemComponent::L2_CACHE,
             receiver /* requester */,
             receiver /* receiver */,
             address,
@@ -705,7 +705,7 @@ DirectoryMSIPolicy::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
 
          // Send WB_REQ to forwarder to have it send us the data
          getMemoryManager()->sendMsg(ShmemMsg::WB_REQ,
-            MemComponent::GMM, MemComponent::L2_CACHE,
+            MemComponent::GMM_CORE, MemComponent::L2_CACHE,
             receiver /* requester */,
             forwarder /* receiver */,
             address,
@@ -734,7 +734,7 @@ DirectoryMSIPolicy::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
 
       MYLOG("Sending request to DRAM for the data");
       getMemoryManager()->sendMsg(ShmemMsg::DRAM_READ_REQ,
-            MemComponent::GMM, MemComponent::DRAM,
+            MemComponent::GMM_CORE, MemComponent::DRAM,
             receiver /* requester */,
             dram_node /* receiver */,
             address,
@@ -815,7 +815,7 @@ DirectoryMSIPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    //   Send reply
    MYLOG("MSG DRAM>%d for %lx", shmem_req->getShmemMsg()->getRequester(), address )
    getMemoryManager()->sendMsg(reply_msg_type,
-         MemComponent::GMM, MemComponent::L2_CACHE,
+         MemComponent::GMM_CORE, MemComponent::L2_CACHE,
          shmem_req->getShmemMsg()->getRequester() /* requester */,
          shmem_req->getShmemMsg()->getRequester() /* receiver */,
          address,
@@ -981,7 +981,7 @@ DirectoryMSIPolicy::processUpgradeReqFromL2Cache(ShmemReq* shmem_req, Byte* cach
             assert (directory_entry->getOwner() == requester);
 
             getMemoryManager()->sendMsg(ShmemMsg::UPGRADE_REP,
-                        MemComponent::GMM, MemComponent::L2_CACHE,
+                        MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                         requester /* requester */,
                         requester /* receiver */,
                         address,
@@ -997,7 +997,7 @@ DirectoryMSIPolicy::processUpgradeReqFromL2Cache(ShmemReq* shmem_req, Byte* cach
             // Send FLUSH_REQ to the current owner
             MYLOG("FLUSH REQ (UPGR)>%u @ %lx",sharers_list_pair.second[0] , address);
             getMemoryManager()->sendMsg(ShmemMsg::FLUSH_REQ,
-                  MemComponent::GMM, MemComponent::L2_CACHE,
+                  MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                   requester /* requester */,
                   directory_entry->getOwner() /* receiver */,
                   address,
@@ -1018,7 +1018,7 @@ DirectoryMSIPolicy::processUpgradeReqFromL2Cache(ShmemReq* shmem_req, Byte* cach
             directory_block_info->setDState(DirectoryState::MODIFIED);
 
             getMemoryManager()->sendMsg(ShmemMsg::UPGRADE_REP,
-                  MemComponent::GMM, MemComponent::L2_CACHE,
+                  MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                   requester /* requester */,
                   requester /* receiver */,
                   address,
@@ -1041,7 +1041,7 @@ DirectoryMSIPolicy::processUpgradeReqFromL2Cache(ShmemReq* shmem_req, Byte* cach
                // Broadcast Invalidation Request to all cores
                // (irrespective of whether they are sharers or not)
                getMemoryManager()->broadcastMsg(ShmemMsg::INV_REQ,
-                     MemComponent::GMM, MemComponent::L2_CACHE,
+                     MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                      requester /* requester */,
                      address,
                      NULL, 0,
@@ -1061,7 +1061,7 @@ DirectoryMSIPolicy::processUpgradeReqFromL2Cache(ShmemReq* shmem_req, Byte* cach
                      ShmemMsg::msg_t msg_type = (!requesterHasCopy && i==0) ? ShmemMsg::FLUSH_REQ : ShmemMsg::INV_REQ;
                      //ShmemMsg::msg_t msg_type = ShmemMsg::INV_REQ;
                      getMemoryManager()->sendMsg( msg_type, //ShmemMsg::INV_REQ,
-                           MemComponent::GMM, MemComponent::L2_CACHE,
+                           MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                            requester /* requester */,
                            sharers_list_pair.second[i] /* receiver */,
                            address,
@@ -1247,7 +1247,7 @@ DirectoryMSIPolicy::sendDataToDram(IntPtr address, core_id_t requester, Byte* da
    core_id_t dram_node = m_core_id; // m_dram_controller_home_lookup->getHome(address);
 
    getMemoryManager()->sendMsg(ShmemMsg::DRAM_WRITE_REQ,
-         MemComponent::GMM, MemComponent::DRAM,
+         MemComponent::GMM_CORE, MemComponent::DRAM,
          requester /* requester */,
          dram_node /* receiver */,
          INVALID_ADDRESS, /* vaddr is unused */

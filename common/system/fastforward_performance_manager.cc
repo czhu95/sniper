@@ -33,7 +33,7 @@ void
 FastForwardPerformanceManager::enable()
 {
    m_enabled = true;
-   for (UInt32 i = 0; i < Sim()->getConfig()->getTotalCores(); i++)
+   for (UInt32 i = 0; i < Sim()->getConfig()->getApplicationCores(); i++)
       Sim()->getCoreManager()->getCoreFromID(i)->enablePerformanceModels();
 
    Sim()->getClockSkewMinimizationServer()->setFastForward(true);

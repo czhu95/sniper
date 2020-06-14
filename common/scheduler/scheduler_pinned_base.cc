@@ -15,14 +15,14 @@ SchedulerPinnedBase::SchedulerPinnedBase(ThreadManager *thread_manager, Subsecon
    : SchedulerDynamic(thread_manager)
    , m_quantum(quantum)
    , m_last_periodic(SubsecondTime::Zero())
-   , m_core_thread_running(Sim()->getConfig()->getApplicationCores(), INVALID_THREAD_ID)
-   , m_quantum_left(Sim()->getConfig()->getApplicationCores(), SubsecondTime::Zero())
+   , m_core_thread_running(Sim()->getConfig()->getTotalCores(), INVALID_THREAD_ID)
+   , m_quantum_left(Sim()->getConfig()->getTotalCores(), SubsecondTime::Zero())
 {
 }
 
 core_id_t SchedulerPinnedBase::findFreeCoreForThread(thread_id_t thread_id)
 {
-   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); ++core_id)
+   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); ++core_id)
    {
       if (m_thread_info[thread_id].hasAffinity(core_id) && m_core_thread_running[core_id] == INVALID_THREAD_ID)
       {
@@ -68,7 +68,10 @@ void SchedulerPinnedBase::threadYield(thread_id_t thread_id)
 
    if (core_id != INVALID_CORE_ID)
    {
-      Core *core = Sim()->getCoreManager()->getCoreFromID(core_id);
+      Core *core = core_id < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
+                      Sim()->getCoreManager()->getCoreFromID(core_id) :
+                      Sim()->getGMMCoreManager()->getCoreFromID(core_id);
+
       SubsecondTime time = core->getPerformanceModel()->getElapsedTime();
 
       m_quantum_left[core_id] = SubsecondTime::Zero();
@@ -96,7 +99,7 @@ bool SchedulerPinnedBase::threadSetAffinity(thread_id_t calling_thread_id, threa
    if (!mask)
    {
       // No mask given: free to schedule anywhere.
-      for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); ++core_id)
+      for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); ++core_id)
       {
          m_thread_info[thread_id].addAffinity(core_id);
       }
@@ -109,7 +112,7 @@ bool SchedulerPinnedBase::threadSetAffinity(thread_id_t calling_thread_id, threa
       {
          if (CPU_ISSET_S(cpu, cpusetsize, mask))
          {
-            LOG_ASSERT_ERROR(cpu < Sim()->getConfig()->getApplicationCores(), "Invalid core %d found in sched_setaffinity() mask", cpu);
+            LOG_ASSERT_ERROR(cpu < Sim()->getConfig()->getTotalCores(), "Invalid core %d found in sched_setaffinity() mask", cpu);
 
             m_thread_info[thread_id].addAffinity(cpu);
          }
@@ -137,7 +140,10 @@ bool SchedulerPinnedBase::threadSetAffinity(thread_id_t calling_thread_id, threa
       if (free_core_id != INVALID_THREAD_ID)                               // Thread's new core is free
       {
          // We have just been moved to a different core, and that core is free. Schedule us there now.
-         Core *core = Sim()->getCoreManager()->getCoreFromID(free_core_id);
+         Core *core = free_core_id < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
+                         Sim()->getCoreManager()->getCoreFromID(free_core_id) :
+                         Sim()->getGMMCoreManager()->getCoreFromID(free_core_id);
+
          SubsecondTime time = std::max(core->getPerformanceModel()->getElapsedTime(), Sim()->getClockSkewMinimizationServer()->getGlobalTime());
          reschedule(time, free_core_id, false);
       }
@@ -148,14 +154,14 @@ bool SchedulerPinnedBase::threadSetAffinity(thread_id_t calling_thread_id, threa
 
 bool SchedulerPinnedBase::threadGetAffinity(thread_id_t thread_id, size_t cpusetsize, cpu_set_t *mask)
 {
-   if (cpusetsize*8 < Sim()->getConfig()->getApplicationCores())
+   if (cpusetsize*8 < Sim()->getConfig()->getTotalCores())
    {
       // Not enough space to return result
       return false;
    }
 
    CPU_ZERO_S(cpusetsize, mask);
-   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); ++core_id)
+   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); ++core_id)
    {
       if (
          m_thread_info[thread_id].hasAffinity(core_id)
@@ -203,7 +209,7 @@ void SchedulerPinnedBase::periodic(SubsecondTime time)
 {
    SubsecondTime delta = time - m_last_periodic;
 
-   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); ++core_id)
+   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); ++core_id)
    {
       if (delta > m_quantum_left[core_id] || m_core_thread_running[core_id] == INVALID_THREAD_ID)
       {
@@ -293,7 +299,7 @@ String SchedulerPinnedBase::ThreadInfo::getAffinityString() const
 {
    std::stringstream ss;
 
-   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); ++core_id)
+   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); ++core_id)
    {
       if (hasAffinity(core_id))
       {
@@ -349,7 +355,7 @@ void SchedulerPinnedBase::printState()
       }
    }
    printf("  --  core state:");
-   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); ++core_id)
+   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); ++core_id)
    {
       if (m_core_thread_running[core_id] == INVALID_THREAD_ID)
          printf(" __");

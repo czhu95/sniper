@@ -34,7 +34,8 @@ PerformanceModel* PerformanceModel::create(Core* core)
    }
    else if (type == "rob")
    {
-      uint32_t smt_threads = Sim()->getCfg()->getIntArray("perf_model/core/logical_cpus", core->getId());
+      uint32_t smt_threads = core->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
+                             Sim()->getCfg()->getIntArray("perf_model/core/logical_cpus", core->getId()) : 1;
       if (smt_threads == 1)
          return new RobPerformanceModel(core);
       else

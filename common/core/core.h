@@ -81,7 +81,8 @@ class Core
       static const char * CoreStateString(State state);
 
       Core(SInt32 id);
-      ~Core();
+      Core(SInt32 id, int dummy);
+      virtual ~Core();
 
       // Query and update branch predictor, return true on mispredict
       bool accessBranchPredictor(IntPtr eip, bool taken, IntPtr target);
@@ -100,7 +101,7 @@ class Core
       void emulateCpuid(UInt32 eax, UInt32 ecx, cpuid_result_t &res) const;
 
       // network accessor since network is private
-      int getId() const { return m_core_id; }
+      virtual int getId() const { return m_core_id; }
       Thread *getThread() const { return m_thread; }
       void setThread(Thread *thread) { m_thread = thread; }
       Network *getNetwork() { return m_network; }
@@ -133,7 +134,7 @@ class Core
          m_spin_elapsed_time += elapsed_time;
       }
 
-   private:
+   protected:
       core_id_t m_core_id;
       const ComponentPeriod* m_dvfs_domain;
       MemoryManagerBase *m_memory_manager;

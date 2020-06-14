@@ -9,7 +9,7 @@ void setInstrumentationMode(Sift::Mode mode);
 void beginROI(THREADID threadid, const CONTEXT * ctxt);
 void endROI(THREADID threadid, const CONTEXT * ctxt);
 
-ADDRINT handleMagic(THREADID threadid, const CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx, ADDRINT gcx);
+ADDRINT handleMagic(THREADID threadid, CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx, ADDRINT gcx, ADDRINT gdx);
 
 ADDRINT translateAddress(ADDRINT addr, ADDRINT size);
 

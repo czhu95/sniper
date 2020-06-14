@@ -395,8 +395,8 @@ UInt64 UserTraceManager::getProgressValue()
 }
 
 SystemTraceManager::SystemTraceManager()
-   : m_num_threads(Sim()->getCfg()->getInt("general/total_cores"))
 {
+   m_num_threads = Config::getSingleton()->getApplicationCores();
    setupTraceFiles(0);
 }
 
@@ -430,10 +430,10 @@ void SystemTraceManager::setupTraceFiles(int index)
 {
    m_tracefiles.resize(m_num_threads);
    m_responsefiles.resize(m_num_threads);
-   m_trace_prefix = Sim()->getCfg()->getStringArray("traceinput/trace_prefix", index);
+   m_trace_prefix = Sim()->getCfg()->getStringArray("traceinput/qemu_trace_prefix", index);
 
    if (m_trace_prefix == "")
-      LOG_PRINT_ERROR("No traceinput/trace_prefix provided for system simulation.");
+      LOG_PRINT_ERROR("No traceinput/qemu_trace_prefix provided for system simulation.");
 
    for (UInt32 i = 0 ; i < m_num_threads ; i++ )
    {
@@ -482,4 +482,44 @@ app_id_t SystemTraceManager::createApplication(SubsecondTime time, thread_id_t c
 void SystemTraceManager::endApplication(TraceThread *thread, SubsecondTime time)
 {
    SYSTEM_SIM_NOT_REACHABLE;
+}
+
+GMMTraceManager::GMMTraceManager()
+   : SystemTraceManager(0)
+{
+   m_num_threads = Config::getSingleton()->getGMMCores();
+   setupTraceFiles(0);
+}
+
+void GMMTraceManager::run()
+{
+   start();
+}
+
+void GMMTraceManager::init()
+{
+   for (UInt32 threadid = 0; threadid < m_num_threads; threadid ++)
+   {
+      String tracefile = m_tracefiles[threadid];
+      String responsefile = m_responsefiles[threadid];
+      m_num_threads_running++;
+      Thread *thread = Sim()->getThreadManager()->createThread(INVALID_APP_ID, INVALID_THREAD_ID);
+      TraceThread *tthread = new GMMTraceThread(thread, SubsecondTime::Zero(), tracefile, responsefile, INVALID_APP_ID, false);
+      m_threads.push_back(tthread);
+   }
+}
+void GMMTraceManager::setupTraceFiles(int index)
+{
+   m_tracefiles.resize(m_num_threads);
+   m_responsefiles.resize(m_num_threads);
+   m_trace_prefix = Sim()->getCfg()->getStringArray("traceinput/trace_prefix", index);
+
+   if (m_trace_prefix == "")
+      LOG_PRINT_ERROR("No traceinput/trace_prefix provided for gmm simulation.");
+
+   for (UInt32 i = 0 ; i < m_num_threads ; i++ )
+   {
+      m_tracefiles[i] = m_trace_prefix + + ".app0.th" + itostr(i) + ".sift";
+      m_responsefiles[i] = m_trace_prefix + + "_response.app0.th" + itostr(i) + ".sift";
+   }
 }

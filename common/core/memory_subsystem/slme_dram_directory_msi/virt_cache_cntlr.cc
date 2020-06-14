@@ -131,7 +131,6 @@ VirtCacheCntlr::VirtCacheCntlr(MemComponent::component_t mem_component,
       String name,
       core_id_t core_id,
       GlobalMemoryManager* memory_manager,
-      AddressHomeLookup* tag_directory_home_lookup,
       Semaphore* user_thread_sem,
       Semaphore* network_thread_sem,
       UInt32 cache_block_size,
@@ -142,7 +141,6 @@ VirtCacheCntlr::VirtCacheCntlr(MemComponent::component_t mem_component,
    m_memory_manager(memory_manager),
    m_next_cache_cntlr(NULL),
    m_last_level(NULL),
-   m_tag_directory_home_lookup(tag_directory_home_lookup),
    m_perfect(cache_params.perfect),
    m_passthrough(Sim()->getCfg()->getBoolArray("perf_model/" + cache_params.configName + "/passthrough", core_id)),
    m_coherent(cache_params.coherent),
@@ -162,6 +160,7 @@ VirtCacheCntlr::VirtCacheCntlr(MemComponent::component_t mem_component,
    m_shmem_perf_model(shmem_perf_model)
 {
    m_core_id_master = m_core_id - m_core_id % m_shared_cores;
+   m_core_id_gmm = memory_manager->getGMMFromId(core_id);
    Sim()->getStatsManager()->logTopology(name, core_id, m_core_id_master);
 
    LOG_ASSERT_ERROR(!Sim()->getCfg()->hasKey("perf_model/perfect_llc"),
@@ -1195,9 +1194,9 @@ VirtCacheCntlr::processSubReqToGMM(IntPtr address, Byte *data_buf, UInt32 data_l
    LOG_ASSERT_ERROR (cache_block_info->hasOption(CacheBlockInfo::SUBSCRIBED), "SubReq for a Cacheblock not subscribed");
 
    getMemoryManager()->sendMsg(ShmemMsg::SUB_REQ,
-         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
          m_core_id_master,
-         m_core_id_master,
+         m_core_id_gmm,
          address,
          Sim()->getThreadManager()->getThreadFromID(m_core_id)->va2pa(address),
          data_buf, data_length,
@@ -1216,9 +1215,9 @@ VirtCacheCntlr::processExReqToGMM(IntPtr address)
    assert((cstate == CacheState::INVALID));
 
    getMemoryManager()->sendMsg(ShmemMsg::EX_REQ,
-         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
          m_core_id_master /* requester */,
-         m_core_id_master /* receiver */,
+         m_core_id_gmm /* receiver */,
          address,
          Sim()->getThreadManager()->getThreadFromID(m_core_id)->va2pa(address),
          NULL, 0,
@@ -1238,9 +1237,9 @@ VirtCacheCntlr::processUpgradeReqToGMM(IntPtr address, ShmemPerf *perf, ShmemPer
 
    core_id_t owner = cache_block_info->getOwner();
    getMemoryManager()->sendMsg(ShmemMsg::UPGRADE_REQ,
-         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
          m_core_id_master /* requester */,
-         m_core_id_master /* receiver */,
+         m_core_id_gmm /* receiver */,
          address,
          Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(address),
          NULL, 0,
@@ -1252,9 +1251,9 @@ VirtCacheCntlr::processShReqToGMM(IntPtr address)
 {
 MYLOG("SH REQ @ %lx", address);
    getMemoryManager()->sendMsg(ShmemMsg::SH_REQ,
-         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+         MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
          m_core_id_master /* requester */,
-         m_core_id_master /* receiver */,
+         m_core_id_gmm /* receiver */,
          address,
          Sim()->getThreadManager()->getThreadFromID(m_core_id)->va2pa(address),
          NULL, 0,
@@ -1530,7 +1529,7 @@ MYLOG("evicting @%lx", evict_address);
       else
       {
          /* Send dirty block to directory */
-         UInt32 home_node_id = m_core_id_master;
+         UInt32 home_node_id = m_core_id_gmm;
          SubsecondTime slme_available = evict_block_info.getSLMeAvailable();
          core_id_t owner = evict_block_info.getOwner();
          if (thread_num == ShmemPerfModel::_SIM_THREAD && slme_available != SubsecondTime::MaxTime())
@@ -1543,7 +1542,7 @@ MYLOG("evicting @%lx", evict_address);
             // Send back the data also
 MYLOG("evict FLUSH %lx", evict_address);
             getMemoryManager()->sendMsg(ShmemMsg::FLUSH_REP,
-                  MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+                  MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
                   m_core_id /* requester */,
                   home_node_id /* receiver */,
                   evict_address,
@@ -1558,7 +1557,7 @@ MYLOG("evict INV %lx", evict_address);
                   "evict_address(0x%x), evict_state(%u)",
                   evict_address, evict_block_info.getCState());
             getMemoryManager()->sendMsg(ShmemMsg::INV_REP,
-                  MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+                  MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
                   m_core_id /* requester */,
                   home_node_id /* receiver */,
                   evict_address,
@@ -2023,7 +2022,7 @@ MYLOG("processInvReqFromGMM l%d", m_mem_component);
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), ShmemPerf::REMOTE_CACHE_INV);
 
       getMemoryManager()->sendMsg(ShmemMsg::INV_REP,
-            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
             address,
@@ -2061,7 +2060,7 @@ MYLOG("processFlushReqFromGMM l%d", m_mem_component);
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), ShmemPerf::REMOTE_CACHE_WB);
 
       getMemoryManager()->sendMsg(ShmemMsg::FLUSH_REP,
-            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
             address,
@@ -2102,7 +2101,7 @@ MYLOG("processWbReqFromGMM l%d", m_mem_component);
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD), ShmemPerf::REMOTE_CACHE_FWD);
 
       getMemoryManager()->sendMsg(ShmemMsg::WB_REP,
-            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM,
+            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
             address,

@@ -15,6 +15,7 @@ class ClockSkewMinimizationServer;
 class StatsManager;
 class Transport;
 class CoreManager;
+class GMMCoreManager;
 class Thread;
 class ThreadManager;
 class ThreadStatsManager;
@@ -75,6 +76,8 @@ public:
    TagsManager *getTagsManager() { return m_tags_manager; }
    RoutineTracer *getRoutineTracer() { return m_rtn_tracer; }
    MemoryTracker *getMemoryTracker() { return m_memory_tracker; }
+   TraceManager *getGMMTraceManager() { return m_gmm_trace_manager; }
+   GMMCoreManager *getGMMCoreManager() { return m_gmm_core_manager; }
    void setMemoryTracker(MemoryTracker *memory_tracker) { m_memory_tracker = memory_tracker; }
 
    bool isRunning() { return m_running; }
@@ -88,7 +91,7 @@ public:
    // Access to the Decoder library for the simulator run
    void createDecoder();
    dl::Decoder *getDecoder();
-   
+
 private:
    Config m_config;
    Log m_log;
@@ -112,6 +115,8 @@ private:
    FaultinjectionManager *m_faultinjection_manager;
    RoutineTracer *m_rtn_tracer;
    MemoryTracker *m_memory_tracker;
+   TraceManager *m_gmm_trace_manager;
+   GMMCoreManager *m_gmm_core_manager;
 
    bool m_running;
    bool m_inst_mode_output;
@@ -122,7 +127,7 @@ private:
    static config::Config *m_config_file;
    static bool m_config_file_allowed;
    static Config::SimulationMode m_mode;
-   
+
    // Object to access the decoder library with the correct configuration
    static dl::Decoder *m_decoder;
    // Surrogate to create a Decoder object for a specific architecture

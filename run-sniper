@@ -532,7 +532,29 @@ if qemu_system:
   sniperoptions.append('-g --general/sim_mode=system')
   sniperoptions.append('-g --traceinput/enabled=true')
   sniperoptions.append('-g --traceinput/emulate_syscalls=false')
-  sniperoptions.append('-g --traceinput/trace_prefix=%s' % traces[0])
+  sniperoptions.append('-g --traceinput/gmm_enabled=true')
+  sniperoptions.append('-g --traceinput/qemu_trace_prefix=%s' % traces[0])
+
+  tracegen = {}
+  tracegen['enabled'] = 'true'
+  tracegen['emulate_syscalls'] = 'true'
+  tracegen['num_apps'] = 1
+  tracegen['redirect'] = False
+  sniperoptions.append('-g --traceinput/stop_with_first_app=false') # Only stop once all processes have completed
+  # Set trace recorder options
+  other_options = []
+  if roi_only:
+    other_options += [ '--roi' ]
+  if use_pid:
+    other_options += [ '--pid', use_pid ]
+  if use_pa:
+    if va2pa_valid():
+      other_options += [ '--pa' ]
+    else:
+      print >> sys.stderr, '[SNIPER] Warning: Unable to use physical addresses for shared memory simulation.'
+  applications = [
+    ([], other_options + ['-e', '1', '-s', '0', '-r', '1', '--follow', '--routine-tracing', '--', './gmm_test'])
+  ]
 
 elif traces:
   sniperoptions.append('-g --traceinput/enabled=true')

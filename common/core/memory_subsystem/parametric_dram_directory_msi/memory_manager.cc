@@ -169,7 +169,7 @@ MemoryManager::MemoryManager(Core* core,
       // Dram Directory Cache
       dram_directory_total_entries = Sim()->getCfg()->getInt("perf_model/dram_directory/total_entries");
       dram_directory_associativity = Sim()->getCfg()->getInt("perf_model/dram_directory/associativity");
-      dram_directory_max_num_sharers = Sim()->getConfig()->getTotalCores();
+      dram_directory_max_num_sharers = Sim()->getConfig()->getApplicationCores();
       dram_directory_max_hw_sharers = Sim()->getCfg()->getInt("perf_model/dram_directory/max_hw_sharers");
       dram_directory_type_str = Sim()->getCfg()->getString("perf_model/dram_directory/directory_type");
       dram_directory_home_lookup_param = Sim()->getCfg()->getInt("perf_model/dram_directory/home_lookup_param");

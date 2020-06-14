@@ -47,6 +47,8 @@ int main(int argc, char* argv[])
 
 
    LOG_ASSERT_ERROR(Sim()->getTraceManager(), "In standalone mode but there is no TraceManager!");
+   if (Sim()->getConfig()->getGMMCores())
+      Sim()->getGMMTraceManager()->run();
    Sim()->getTraceManager()->run();
    // Iterate over a number of application runs. This can allow for a warmup pass before running an application
    for (int i = 1 ; i < Sim()->getCfg()->getInt("traceinput/num_runs") ; i++)

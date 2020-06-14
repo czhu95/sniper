@@ -197,7 +197,7 @@ ReplicationPolicy::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
 
    MYLOG("Sending request to DRAM for the data");
    getMemoryManager()->sendMsg(ShmemMsg::DRAM_READ_REQ,
-         MemComponent::GMM, MemComponent::DRAM,
+         MemComponent::GMM_CORE, MemComponent::DRAM,
          receiver /* requester */,
          dram_node /* receiver */,
          address,
@@ -258,7 +258,7 @@ ReplicationPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    //   Send reply
    MYLOG("MSG DRAM>%d for %lx", shmem_req->getShmemMsg()->getRequester(), address )
    getMemoryManager()->sendMsg(reply_msg_type,
-         MemComponent::GMM, MemComponent::L2_CACHE,
+         MemComponent::GMM_CORE, MemComponent::L2_CACHE,
          shmem_req->getShmemMsg()->getRequester() /* requester */,
          shmem_req->getShmemMsg()->getRequester() /* receiver */,
          address,

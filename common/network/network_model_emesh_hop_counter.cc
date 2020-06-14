@@ -18,7 +18,7 @@ NetworkModelEMeshHopCounter::NetworkModelEMeshHopCounter(Network *net, EStaticNe
    , _num_bytes(0)
    , _total_latency(SubsecondTime::Zero())
 {
-   SInt32 total_cores = Config::getSingleton()->getTotalCores();
+   SInt32 total_cores = Config::getSingleton()->getApplicationCores();
 
    _meshWidth = (SInt32) floor (sqrt(total_cores));
    _meshHeight = (SInt32) ceil (1.0 * total_cores / _meshWidth);
@@ -67,7 +67,7 @@ void NetworkModelEMeshHopCounter::routePacket(const NetPacket &pkt,
 
    if (pkt.receiver == NetPacket::BROADCAST)
    {
-      UInt32 total_cores = Config::getSingleton()->getTotalCores();
+      UInt32 total_cores = Config::getSingleton()->getApplicationCores();
 
       SubsecondTime curr_time = pkt.time;
       // There's no broadcast tree here, but I guess that won't be a
@@ -122,7 +122,7 @@ NetworkModelEMeshHopCounter::processReceivedPacket(NetPacket &pkt)
    else // Other Packet types
       requester = pkt.sender;
 
-   LOG_ASSERT_ERROR((requester >= 0) && (requester < (core_id_t) Config::getSingleton()->getTotalCores()),
+   LOG_ASSERT_ERROR((requester >= 0) && (requester < (core_id_t) Config::getSingleton()->getApplicationCores()),
          "requester(%i)", requester);
 
    if ( (!_enabled) || (requester >= (core_id_t) Config::getSingleton()->getApplicationCores()) )

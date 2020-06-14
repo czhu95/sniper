@@ -13,12 +13,18 @@
 #include <vector>
 
 class Core;
+namespace SingleLevelMemory
+{
+   class GMMCore;
+}
+
+using SingleLevelMemory::GMMCore;
 
 class CoreManager
 {
    public:
       CoreManager();
-      ~CoreManager();
+      virtual ~CoreManager();
 
       enum ThreadType {
           INVALID,
@@ -28,9 +34,9 @@ class CoreManager
       };
 
       void initializeCommId(SInt32 comm_id);
-      void initializeThread(core_id_t core_id);
+      virtual void initializeThread(core_id_t core_id);
       void terminateThread();
-      core_id_t registerSimThread(ThreadType type);
+      virtual core_id_t registerSimThread(ThreadType type);
 
       core_id_t getCurrentCoreID(int threadIndex = -1) // id of currently active core (or INVALID_CORE_ID)
       {
@@ -45,13 +51,14 @@ class CoreManager
           return m_core_tls->getPtr<Core>(threadIndex);
       }
 
-      Core *getCoreFromID(core_id_t core_id);
+      virtual Core *getCoreFromID(core_id_t core_id);
 
       bool amiUserThread();
       bool amiCoreThread();
       bool amiSimThread();
-   private:
+   protected:
 
+      CoreManager(int dummy);
       UInt32 *tid_map;
       TLS *m_core_tls;
       TLS *m_thread_type_tls;
@@ -61,6 +68,16 @@ class CoreManager
       Lock m_num_registered_threads_lock;
 
       std::vector<Core*> m_cores;
+};
+
+class GMMCoreManager : public CoreManager
+{
+   public:
+      GMMCoreManager();
+      core_id_t registerSimThread(ThreadType type) override;
+      Core *getCoreFromID(core_id_t core_id) override;
+      GMMCore *getGMMCoreFromID(core_id_t core_id);
+      void initializeThread(core_id_t core_id) override;
 };
 
 #endif

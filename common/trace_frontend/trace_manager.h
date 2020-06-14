@@ -44,7 +44,7 @@ class TraceManager
       void stop();
       void mark_done();
       void wait();
-      void run();
+      virtual void run();
       virtual void init() = 0;
       virtual void cleanup() = 0;
       virtual void setupTraceFiles(int index) = 0;
@@ -101,8 +101,9 @@ class UserTraceManager : public TraceManager
 
 class SystemTraceManager : public TraceManager
 {
-   private:
+   protected:
       UInt32 m_num_threads;
+      SystemTraceManager(int dummy __attribute__((unused))) {}
 
    public:
       SystemTraceManager();
@@ -117,5 +118,16 @@ class SystemTraceManager : public TraceManager
 
       UInt64 getProgressValue() override;
 };
+
+class GMMTraceManager : public SystemTraceManager
+{
+   public:
+      GMMTraceManager();
+      ~GMMTraceManager() override {}
+      void init() override;
+      void run() override;
+      void setupTraceFiles(int index) override;
+};
+
 
 #endif // __TRACE_MANAGER_H

@@ -9,7 +9,6 @@
 
 #include "core_manager.h"
 #include "core.h"
-#include "gmm_core.h"
 #include "network.h"
 #include "cache.h"
 #include "config.h"
@@ -68,7 +67,6 @@ void CoreManager::initializeCommId(SInt32 comm_id)
 
 void CoreManager::initializeThread(core_id_t core_id)
 {
-   LOG_ASSERT_ERROR(core_id < (core_id_t)Config::getSingleton()->getApplicationCores(), "Illegal index in initializeThread!");
    m_core_tls->set(m_cores.at(core_id));
    m_thread_type_tls->setInt(APP_THREAD);
 
@@ -109,7 +107,7 @@ core_id_t CoreManager::registerSimThread(ThreadType type)
 
     if (*num_registered_threads == Config::getSingleton()->getApplicationCores())
     {
-       return INVALID_CORE_ID;
+       return CORE_ID_INVALID;
     }
 
     LOG_ASSERT_ERROR(*num_registered_threads < Config::getSingleton()->getApplicationCores(),
@@ -141,8 +139,6 @@ bool CoreManager::amiUserThread()
     return m_thread_type_tls->getInt() == APP_THREAD;
 }
 
-using SingleLevelMemory::GMMCore;
-
 GMMCoreManager::GMMCoreManager()
       : CoreManager(0)
 {
@@ -150,7 +146,7 @@ GMMCoreManager::GMMCoreManager()
 
    for (UInt32 i = Config::getSingleton()->getApplicationCores(); i < Config::getSingleton()->getTotalCores(); i++)
    {
-      m_cores.push_back(new GMMCore(i));
+      m_cores.push_back(new Core(i));
    }
 
    LOG_PRINT("Finished GMMCoreManager Constructor.");
@@ -189,33 +185,8 @@ core_id_t GMMCoreManager::registerSimThread(ThreadType type)
     return core->getId();
 }
 
-Core *GMMCoreManager::getCoreFromID(core_id_t id)
+GMMCore *CoreManager::getCoreFromID(core_id_t id)
 {
-   LOG_ASSERT_ERROR(id >= (core_id_t)Config::getSingleton()->getApplicationCores() &&
-                    id <  (core_id_t)Config::getSingleton()->getTotalCores(),
-                    "Illegal index in getCoreFromID!");
-   return m_cores.at(id - Config::getSingleton()->getApplicationCores());
+   LOG_ASSERT_ERROR(id < (core_id_t)Config::getSingleton()->getApplicationCores(), "Illegal index in getCoreFromID!");
+   return m_cores.at(id);
 }
-
-GMMCore *GMMCoreManager::getGMMCoreFromID(core_id_t id)
-{
-   return dynamic_cast<GMMCore *>(getCoreFromID(id));
-}
-
-void GMMCoreManager::initializeThread(core_id_t core_id)
-{
-   LOG_ASSERT_ERROR(core_id >= (core_id_t)Config::getSingleton()->getApplicationCores() &&
-                    core_id <  (core_id_t)Config::getSingleton()->getTotalCores(),
-                    "Illegal index in initializeThread!");
-
-   core_id -= Config::getSingleton()->getApplicationCores();
-
-   m_core_tls->set(m_cores.at(core_id));
-   m_thread_type_tls->setInt(APP_THREAD);
-
-   LOG_PRINT("Initialize thread for core %p (%d)", m_cores.at(core_id), m_cores.at(core_id)->getId());
-   LOG_ASSERT_ERROR(m_core_tls->get() == (void*)(m_cores.at(core_id)),
-                    "TLS appears to be broken. %p != %p", m_core_tls->get(), (void*)(m_cores.at(core_id)));
-}
-
-

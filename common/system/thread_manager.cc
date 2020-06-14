@@ -80,7 +80,10 @@ Thread* ThreadManager::createThread_unlocked(app_id_t app_id, thread_id_t creato
    core_id_t core_id = m_scheduler->threadCreate(thread_id);
    if (core_id != INVALID_CORE_ID)
    {
-      Core *core = Sim()->getCoreManager()->getCoreFromID(core_id);
+      Core *core = core_id < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
+                      Sim()->getCoreManager()->getCoreFromID(core_id) :
+                      Sim()->getGMMCoreManager()->getCoreFromID(core_id);
+
       thread->setCore(core);
       core->setState(Core::INITIALIZING);
    }
@@ -467,7 +470,10 @@ void SystemThreadManager::onThreadExit(thread_id_t thread_id)
    m_thread_state[thread_id].status = Core::IDLE;
 
    if (!core)
-      core = Sim()->getCoreManager()->getCoreFromID(thread_id);
+      core = thread_id < (thread_id_t)Sim()->getConfig()->getApplicationCores() ?
+                Sim()->getCoreManager()->getCoreFromID(thread_id) :
+                Sim()->getGMMCoreManager()->getCoreFromID(thread_id);
+
 
    // Set the CoreState to 'IDLE'
    core->setState(Core::IDLE);
@@ -506,7 +512,10 @@ void SystemThreadManager::moveThread(thread_id_t thread_id, core_id_t core_id, S
       )
          resumeThread(thread_id, INVALID_THREAD_ID, time);
 
-      Core *core = Sim()->getCoreManager()->getCoreFromID(core_id);
+      Core *core = core_id < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
+                      Sim()->getCoreManager()->getCoreFromID(core_id) :
+                      Sim()->getGMMCoreManager()->getCoreFromID(core_id);
+
       thread->setCore(core);
       if (getThreadState(thread_id) != Core::STALLED)
          core->setState(Core::RUNNING);

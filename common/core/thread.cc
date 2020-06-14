@@ -75,14 +75,40 @@ bool Thread::reschedule(SubsecondTime &time, Core *current_core)
 
 bool Thread::updateCoreTLS(int threadIndex)
 {
-   if (Sim()->getCoreManager()->getCurrentCore(threadIndex) != m_core)
+   if (!m_core)
    {
       if (Sim()->getCoreManager()->getCurrentCore(threadIndex))
          Sim()->getCoreManager()->terminateThread();
-      if (m_core)
-         Sim()->getCoreManager()->initializeThread(m_core->getId());
+
+      if (Sim()->getGMMCoreManager()->getCurrentCore(threadIndex))
+         Sim()->getGMMCoreManager()->terminateThread();
+
       return true;
    }
+   else if (m_core && m_core->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores())
+   {
+      if (Sim()->getCoreManager()->getCurrentCore(threadIndex) != m_core)
+      {
+         if (Sim()->getCoreManager()->getCurrentCore(threadIndex))
+            Sim()->getCoreManager()->terminateThread();
+
+         Sim()->getCoreManager()->initializeThread(m_core->getId());
+         return true;
+      }
+      else
+         return false;
+   }
    else
-      return false;
+   {
+      if (Sim()->getGMMCoreManager()->getCurrentCore(threadIndex) != m_core)
+      {
+         if (Sim()->getGMMCoreManager()->getCurrentCore(threadIndex))
+            Sim()->getGMMCoreManager()->terminateThread();
+
+         Sim()->getGMMCoreManager()->initializeThread(m_core->getId());
+         return true;
+      }
+      else
+         return false;
+   }
 }

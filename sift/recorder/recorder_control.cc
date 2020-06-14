@@ -156,13 +156,31 @@ void setInstrumentationMode(Sift::Mode mode)
    }
 }
 
-ADDRINT handleMagic(THREADID threadid, const CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx, ADDRINT gcx)
+ADDRINT handleMagic(THREADID threadid, CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx, ADDRINT gcx, ADDRINT gdx)
 {
    uint64_t res = gax; // Default: don't modify gax
 
    if (KnobUseResponseFiles.Value() && thread_data[threadid].running && thread_data[threadid].output)
    {
-      res = thread_data[threadid].output->Magic(gax, gbx, gcx);
+      if (gax == SIM_CMD_GMM_CORE_MESSAGE)
+      {
+         Sift::GMMCoreMessage msg{(Sift::GMMMsgType)(gbx >> 32), (int32_t)(gbx & 0xffffffffUL), gcx, gdx};
+         thread_data[threadid].output->SendGMMCoreMessage(msg);
+      }
+      else if (gax == SIM_CMD_GMM_CORE_PULL)
+      {
+         Sift::GMMCoreMessage msg;
+         thread_data[threadid].output->PullGMMCoreMessage(msg);
+         PIN_SetContextReg(ctxt, REG_GBX, ((uint64_t)msg.type << 32) | msg.sender);
+         PIN_SetContextReg(ctxt, REG_GCX, msg.addr);
+         PIN_SetContextReg(ctxt, REG_GDX, msg.length);
+
+         fprintf(stderr, "addr=%lx\n", msg.addr);
+      }
+      else
+      {
+         res = thread_data[threadid].output->Magic(gax, gbx, gcx);
+      }
    }
 
    if (gax == SIM_CMD_ROI_START)

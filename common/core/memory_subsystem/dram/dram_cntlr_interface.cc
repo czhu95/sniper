@@ -94,7 +94,7 @@ void DramCntlrInterface::handleMsgFromGMM(core_id_t sender, SingleLevelMemory::S
             hit_where == HitWhere::DRAM_CACHE ? ShmemPerf::DRAM_CACHE : ShmemPerf::DRAM);
 
          getMemoryManager()->sendMsg(SingleLevelMemory::ShmemMsg::DRAM_READ_REP,
-               MemComponent::DRAM, MemComponent::GMM,
+               MemComponent::DRAM, MemComponent::GMM_CORE,
                shmem_msg->getRequester() /* requester */,
                sender /* receiver */,
                shmem_msg->getAddress(),

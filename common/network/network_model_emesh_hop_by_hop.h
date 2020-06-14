@@ -50,6 +50,7 @@ class NetworkModelEMeshHopByHop : public NetworkModel
       // Functions
       void computePosition(core_id_t core, SInt32 &x, SInt32 &y);
       core_id_t computeCoreId(SInt32 x, SInt32 y);
+      core_id_t getMasterCoreId(core_id_t core_id);
       SInt32 computeDistance(core_id_t sender, core_id_t receiver);
 
       void addHop(OutputDirection direction, core_id_t final_dest, core_id_t next_dest, SubsecondTime pkt_time, UInt32 pkt_length, std::vector<Hop>& nextHops, core_id_t requester, subsecond_time_t *queue_delay_stats = NULL);

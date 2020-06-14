@@ -18,6 +18,8 @@
 #include "routine_tracer.h"
 #include "sim_api.h"
 #include "memory_manager_base.h"
+#include "gmm_core.h"
+#include "../core/memory_subsystem/slme_dram_directory_msi/shmem_msg.h"
 
 #include "stats.h"
 
@@ -56,8 +58,8 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    , m_cleanup(cleanup)
    , m_started(false)
    , m_flushed(false)
-   , m_stopped(false)
    , m_virt_cache(false)
+   , m_stopped(false)
 {
 
    //if (!xed_initialized)
@@ -1028,8 +1030,49 @@ void TraceThread::handleAccessMemory(Core::lock_signal_t lock_signal, Core::mem_
 
 void TraceThread::handleGMMCmdFunc(uint64_t cmd, IntPtr start, uint64_t arg1)
 {
-   for (core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); core_id ++)
+   for (core_id_t core_id = Sim()->getConfig()->getApplicationCores(); core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); core_id ++)
    {
-      Sim()->getCoreManager()->getCoreFromID(core_id)->getMemoryManager()->Command(cmd, start, arg1);
+      Sim()->getGMMCoreManager()->getCoreFromID(core_id)->getMemoryManager()->Command(cmd, start, arg1);
    }
+}
+
+GMMTraceThread::GMMTraceThread(Thread *thread, SubsecondTime time_start, String tracefile, String responsefile, app_id_t app_id, bool cleanup)
+   : TraceThread(thread, time_start, tracefile, responsefile, app_id, cleanup)
+{
+   m_trace.setHandleGMMCoreFunc(GMMTraceThread::__handleGMMCoreMessageFunc,
+                                GMMTraceThread::__handleGMMCorePullFunc,
+                                this);
+}
+
+void GMMTraceThread::handleGMMCoreMessageFunc(Sift::GMMCoreMessage &msg)
+{
+
+}
+
+void GMMTraceThread::handleGMMCorePullFunc(Sift::GMMCoreMessage &msg)
+{
+   SingleLevelMemory::GMMCore *core = Sim()->getGMMCoreManager()->getGMMCoreFromID(m_thread->getId());
+   SingleLevelMemory::ShmemMsg shmem_msg((ShmemPerf *)NULL);
+
+   core->dequeueMessage(&shmem_msg);
+   msg.type = Sift::ShReq;
+   msg.sender = shmem_msg.getRequester();
+   msg.addr = shmem_msg.getAddress();
+   msg.length = shmem_msg.getDataLength();
+}
+
+void GMMTraceThread::signalStarted()
+{
+   // Received first instruction, let TraceManager know our SIFT connection is up and running
+   Sim()->getGMMTraceManager()->signalStarted();
+   // If we are stalled at beginning because we are simulating system thread
+   if (Sim()->getSimMode() == Simulator::SYSTEM &&
+       Sim()->getThreadManager()->getThreadState(m_thread->getId()) == Core::STALLED &&
+       Sim()->getThreadManager()->getThreadStallReason(m_thread->getId()) == ThreadManager::STALL_VCPU_HALT)
+   {
+      SubsecondTime time = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
+      ScopedLock sl(Sim()->getThreadManager()->getLock());
+      Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time, NULL);
+   }
+   m_started = true;
 }
