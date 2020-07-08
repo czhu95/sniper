@@ -164,18 +164,31 @@ ADDRINT handleMagic(THREADID threadid, CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx,
    {
       if (gax == SIM_CMD_GMM_CORE_MESSAGE)
       {
-         Sift::GMMCoreMessage msg{(Sift::GMMMsgType)(gbx >> 32), (int32_t)(gbx & 0xffffffffUL), gcx, gdx};
+         Sift::GMMCoreMessage msg;
+         PIN_SafeCopy(&msg, (void *)gbx, sizeof(Sift::GMMCoreMessage));
+         // Sift::GMMCoreMessage msg{gbx >> 32, (int32_t)(gbx & 0xffffffffUL), gcx, gdx};
+         fprintf(stderr, "[%d]GMMCoreMessage: id=%d, type=%d, receiver=%d, payload[0]=%lx, payload[1]=%lx\n", app_id, msg.policy, msg.type, msg.receiver, msg.payload[0], msg.payload[1]);
          thread_data[threadid].output->SendGMMCoreMessage(msg);
+         setInstrumentationMode(Sift::ModeDetailed);
       }
       else if (gax == SIM_CMD_GMM_CORE_PULL)
       {
          Sift::GMMCoreMessage msg;
          thread_data[threadid].output->PullGMMCoreMessage(msg);
-         PIN_SetContextReg(ctxt, REG_GBX, ((uint64_t)msg.type << 32) | msg.sender);
-         PIN_SetContextReg(ctxt, REG_GCX, msg.addr);
-         PIN_SetContextReg(ctxt, REG_GDX, msg.length);
+         fprintf(stderr, "[%d]GMMCorePull: id=%d, type=%d, addr=%lx\n", app_id, msg.policy, msg.type, msg.payload[0]);
+         if (msg.policy != -1)
+         {
+            PIN_SafeCopy((void *)gbx, &msg, sizeof(Sift::GMMCoreMessage));
+            res = 0;
+         }
+         else
+         {
+            res = -1;
+         }
+         // PIN_SetContextReg(ctxt, REG_GBX, ((uint64_t)msg.type << 32) | msg.sender);
+         // PIN_SetContextReg(ctxt, REG_GCX, msg.addr);
+         // PIN_SetContextReg(ctxt, REG_GDX, msg.length);
 
-         fprintf(stderr, "addr=%lx\n", msg.addr);
       }
       else
       {
@@ -371,7 +384,7 @@ void openFile(THREADID threadid)
          sprintf(filename, "%s.app%" PRId32 ".th%" PRIu64 ".sift", KnobOutputFile.Value().c_str(), app_id, thread_data[threadid].thread_num);
    }
 
-   if (KnobVerbose.Value())
+   // if (KnobVerbose.Value())
       std::cerr << "[SIFT_RECORDER:" << app_id << ":" << thread_data[threadid].thread_num << "] Output = [" << filename << "]" << std::endl;
 
    if (KnobUseResponseFiles.Value())

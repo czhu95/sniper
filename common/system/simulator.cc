@@ -27,6 +27,7 @@
 #include "instruction_tracer.h"
 #include "memory_tracker.h"
 #include "circular_log.h"
+#include "segment_table.h"
 
 #include <sstream>
 
@@ -176,6 +177,7 @@ void Simulator::start()
    {
       m_gmm_trace_manager = new GMMTraceManager();
       m_gmm_core_manager = new GMMCoreManager();
+      m_segment_table = new SingleLevelMemory::SegmentTable();
    }
 
    CircularLog::enableCallbacks();

@@ -16,6 +16,9 @@
 #include "stats.h"
 #include "topology_info.h"
 #include "cheetah_manager.h"
+#include "sift_format.h"
+
+#include "global_memory_manager.h"
 
 #include <cstring>
 
@@ -599,4 +602,39 @@ Core::emulateCpuid(UInt32 eax, UInt32 ecx, cpuid_result_t &res) const
    printf("CPUID[%d]: %08x %08x => ", m_core_id, eax, ecx);
    printf("%08x %08x %08x %08x\n", res.eax, res.ebx, res.ecx, res.edx);
    #endif
+}
+
+MemoryResult
+Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
+{
+   SubsecondTime initial_time = now;
+   SubsecondTime final_time = now;
+   getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, now);
+   SingleLevelMemory::GlobalMemoryManager *mm = dynamic_cast<SingleLevelMemory::GlobalMemoryManager *>(getMemoryManager());
+   LOG_ASSERT_ERROR(mm, "Cannot convert MemoryManager to GlobalMemoryManager");
+   core_id_t gmm_core_id = Sim()->getConfig()->getApplicationCores(); //mm->getGMMFromId(m_core_id);
+   mm->sendMsg(static_cast<SingleLevelMemory::ShmemMsg::msg_t>(msg->type),
+         MemComponent::CORE, MemComponent::GMM_CORE,
+         m_core_id,
+         gmm_core_id,
+         msg->payload[0],
+         msg->payload[1],
+         NULL, 0,
+         HitWhere::UNKNOWN, &m_dummy_shmem_perf, ShmemPerfModel::_USER_THREAD);
+
+   if (msg->type == SingleLevelMemory::ShmemMsg::ATOMIC_UPDATE_REQ)
+   {
+      m_gmm_sem.wait();
+      final_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD);
+   }
+
+   SubsecondTime shmem_time = final_time - initial_time;
+   return makeMemoryResult(HitWhere::UNKNOWN, shmem_time);
+}
+
+void
+Core::signalGMMDone()
+{
+   LOG_PRINT_WARNING("Signaling %d", m_core_id);
+   m_gmm_sem.signal();
 }

@@ -20,6 +20,9 @@
 #include "address_home_lookup.h"
 #include "global_memory_manager.h"
 #include "shmem_perf.h"
+#include "sift_format.h"
+#include "instruction.h"
+#include "thread.h"
 
 #if 0
    extern Lock iolock;
@@ -92,10 +95,14 @@ GMMCore::GMMCore(SInt32 id)
                dram_directory_type_str,
                dram_directory_cache_access_time,
                m_shmem_perf_model);
+
+   m_dram_queue_list = new ReqQueueList();
 }
 
 GMMCore::~GMMCore()
 {
+   delete m_dram_controller_home_lookup;
+   delete m_dram_queue_list;
 }
 
 void
@@ -104,107 +111,315 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
    IntPtr address = shmem_msg->getAddress();
 
    // MYLOG("begin for address %lx, %d in queue", address, m_dram_directory_req_queue_list->size(address));
-   enqueueMessage(shmem_msg);
-
    updateShmemPerf(shmem_msg, ShmemPerf::TD_ACCESS);
 
    // Look up line in segment table
    // bool slb_hit = false;
 
    // Look up policy
-   PolicyBase *policy = policyLookup(address);
+   policy_id_t policy_id = Sim()->getSegmentTable()->lookup(address);
+
+   if (policy_id != DIRECTORY_COHERENCE)
+   {
+      MemComponent::component_t sender_mem_component = shmem_msg->getSenderMemComponent();
+
+      switch(sender_mem_component)
+      {
+         case MemComponent::LAST_LEVEL_CACHE:
+         {
+            // Look up TLB
+            if (sender != m_core_id &&
+                (shmem_msg->getMsgType() == ShmemMsg::SH_REQ || shmem_msg->getMsgType() == ShmemMsg::EX_REQ)
+                && m_tlb.count({address, address + 1}) == 0)
+            {
+               Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
+               buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+               enqueueMessage(core_msg);
+            }
+            handleMsgFromL2Cache(sender, shmem_msg);
+            break;
+         }
+         case MemComponent::CORE:
+         {
+            Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
+            buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+            enqueueMessage(core_msg);
+            break;
+         }
+         case MemComponent::DRAM:
+            handleMsgFromDRAM(sender, shmem_msg);
+            break;
+         case MemComponent::GMM_CORE:
+            handleMsgFromGMM(sender, shmem_msg);
+            break;
+         default:
+            LOG_PRINT_ERROR("Unrecognized sender component(%u)",
+                  sender_mem_component);
+            break;
+      }
+
+   }
+   else
+   {
+      MemComponent::component_t sender_mem_component = shmem_msg->getSenderMemComponent();
+
+      switch(sender_mem_component)
+      {
+         case MemComponent::LAST_LEVEL_CACHE:
+            m_directory_policy->handleMsgFromL2Cache(sender, shmem_msg);
+            break;
+         case MemComponent::DRAM:
+            m_directory_policy->handleMsgFromDRAM(sender, shmem_msg);
+            break;
+         case MemComponent::GMM_CORE:
+            m_directory_policy->handleMsgFromGMM(sender, shmem_msg);
+            break;
+
+         default:
+            LOG_PRINT_ERROR("Unrecognized sender component(%u)",
+                  sender_mem_component);
+            break;
+      }
+   }
+}
+
+void
+GMMCore::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
+{
+   ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
+   SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD);
+   IntPtr va = shmem_msg->getAddress();
+   IntPtr pa = shmem_msg->getPhysAddress();
+   core_id_t requester = shmem_msg->getRequester();
+
+   MYLOG("begin for address %lx, pa %lx, %d in queue, requester is %u", va, pa, m_dram_directory_req_queue_list->size(va), requester);
+
+   assert(pa != INVALID_ADDRESS);
+   // if (pa == INVALID_ADDRESS)
+   // {
+   //    pa = Sim()->getThreadManager()->getThreadFromID(requester)->va2pa(va);
+   //    shmem_msg->setPhysAddress(pa);
+   // }
+
+   switch (shmem_msg_type)
+   {
+      // case ShmemMsg::EX_REQ:
+      // {
+      //    MYLOG("E REQ<%u @ %lx", sender, va);
+
+      //    // Add request onto a queue
+      //    ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
+
+      //    m_dram_directory_req_queue_list->enqueue(va, shmem_req);
+      //    MYLOG("ENqueued E REQ for address %lx", va );
+      //    if (m_dram_directory_req_queue_list->size(va) == 1)
+      //    {
+      //       processExReqFromL2Cache(shmem_req);
+      //    }
+      //    else
+      //    {
+      //       MYLOG("E REQ (%lx) not handled yet because of outstanding request in the queue", va);
+      //    }
+      //    break;
+      // }
+      case ShmemMsg::SH_REQ:
+      {
+         MYLOG("S REQ<%u @ %lx", sender, va);
+
+         // Add request onto a queue
+         ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
+
+         m_dram_queue_list->enqueue(va, shmem_req);
+         MYLOG("ENqueued S REQ for address %lx", va );
+         if (m_tlb.count({va, va + 1}) == true && m_dram_queue_list->size(va) == 1)
+         {
+            processShReqFromL2Cache(shmem_req);
+         }
+         else
+         {
+            MYLOG("S REQ (%lx) not handled because of outstanding request in the queue", va);
+         }
+         break;
+      }
+
+      case ShmemMsg::INV_REP:
+         MYLOG("INV REP<%u @ %lx", sender, va);
+         processInvRepFromL2Cache(sender, shmem_msg);
+         break;
+
+      // case ShmemMsg::FLUSH_REP:
+      //    MYLOG("FLUSH REP<%u @ %lx", sender, va);
+      //    processFlushRepFromL2Cache(sender, shmem_msg);
+      //    break;
+
+      // case ShmemMsg::WB_REP:
+      //    MYLOG("WB REP<%u @ %lx", sender, va);
+      //    processWbRepFromL2Cache(sender, shmem_msg);
+      //    break;
+
+      default:
+         LOG_PRINT_ERROR("Unrecognized Shmem Msg Type: %u", shmem_msg_type);
+         break;
+
+      // case ShmemMsg::UPGRADE_REQ:
+      //    MYLOG("UPGR REQ<%u @ %lx", sender, va);
+
+      //    // Add request onto a queue
+      //    ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
+      //    m_dram_directory_req_queue_list->enqueue(va, shmem_req);
+      //    MYLOG("ENqueued  UPGRADE REQ for address %lx",  va );
+
+      //    if (m_dram_directory_req_queue_list->size(va) == 1)
+      //    {
+      //       processUpgradeReqFromL2Cache(shmem_req);
+      //    }
+      //    else
+      //    {
+      //       MYLOG("UPGRADE REQ (%lx) not handled because of outstanding request in the queue", va);
+      //    }
+
+      //    break;
+
+   }
+MYLOG("done for %lx", va);
+}
+
+void
+GMMCore::handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
+{
+   switch (shmem_msg->getMsgType())
+   {
+      case ShmemMsg::TLB_INSERT:
+      {
+         TLBEntry e = {shmem_msg->getAddress(), shmem_msg->getPhysAddress()};
+         m_tlb.insert(e);
+         for (auto it = m_dram_queue_list->begin(); it != m_dram_queue_list->end(); it ++)
+         {
+            if (e.contains(*it))
+               processShReqFromL2Cache(m_dram_queue_list->front(*it));
+         }
+         break;
+      }
+      case ShmemMsg::ATOMIC_UPDATE_REP:
+      case ShmemMsg::ATOMIC_UPDATE_MSG:
+      {
+         Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
+         buildGMMCoreMessage(SUBSCRIPTION, sender, shmem_msg, *core_msg);
+         enqueueMessage(core_msg);
+         break;
+      }
+      default:
+         LOG_PRINT_ERROR("Unrecognized Shmem Msg Type: %u", shmem_msg->getMsgType());
+         break;
+
+   }
+   // IntPtr pa = shmem_msg->getPhysAddress();
+
+   // if (sender != m_core_id)
+   // {
+   //    core_id_t home_node = m_dram_controller_home_lookup->getHome(pa);
+   //    assert(home_node == m_core_id);
+   // }
+
+   // handleMsgFromL2Cache(shmem_msg->getRequester(), shmem_msg);
+}
+
+void
+GMMCore::processNextReqFromL2Cache(IntPtr address)
+{
+   MYLOG("Start processNextReqFromL2Cache(%lx): %d in Queue", address, m_dram_directory_req_queue_list->size(address) );
+
+   MYLOG("about to dequeue request for address %lx", address );
+   assert(m_dram_queue_list->size(address) >= 1);
+   ShmemReq* completed_shmem_req = m_dram_queue_list->dequeue(address);
+   delete completed_shmem_req;
+
+   if (! m_dram_queue_list->empty(address))
+   {
+      MYLOG("A new shmem req for address(%lx) found", address);
+
+      ShmemReq* shmem_req = m_dram_queue_list->front(address);
+
+      // Update the Shared Mem Cycle Counts appropriately
+      getShmemPerfModel()->updateElapsedTime(shmem_req->getTime(), ShmemPerfModel::_SIM_THREAD);
+
+      if (shmem_req->getShmemMsg()->getMsgType() == ShmemMsg::SH_REQ)
+      {
+         MYLOG("A new SH_REQ for address(%lx) found", address);
+         processShReqFromL2Cache(shmem_req);
+      }
+      else
+         LOG_PRINT_ERROR("Unrecognized Request(%u)", shmem_req->getShmemMsg()->getMsgType());
+   }
+   MYLOG("End processNextReqFromL2Cache(%lx)", address);
+}
+
+void
+GMMCore::processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf)
+{
+   IntPtr address = shmem_req->getShmemMsg()->getAddress();
+   core_id_t requester = shmem_req->getShmemMsg()->getRequester();
+
+   MYLOG("Start @ %lx", address);
+   updateShmemPerf(shmem_req);
+   retrieveDataAndSendToL2Cache(ShmemMsg::SH_REP, requester, address, NULL, shmem_req->getShmemMsg());
+
+   MYLOG("End @ %lx", address);
+}
+
+void
+GMMCore::buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shmem_msg, Sift::GMMCoreMessage &msg)
+{
+   LOG_ASSERT_ERROR(policy != DIRECTORY_COHERENCE, "Directory coherence maintained by hardware.");
+
+   msg.policy = policy;
+   msg.sender = sender;
+   msg.requester = shmem_msg->getRequester();
 
    MemComponent::component_t sender_mem_component = shmem_msg->getSenderMemComponent();
 
    switch(sender_mem_component)
    {
-      case MemComponent::LAST_LEVEL_CACHE:
-         policy->handleMsgFromL2Cache(sender, shmem_msg);
-         break;
-      case MemComponent::DRAM:
-         policy->handleMsgFromDRAM(sender, shmem_msg);
+      case MemComponent::CORE:
+         switch (policy)
+         {
+            case SUBSCRIPTION:
+               msg.type = ShmemMsg::ATOMIC_UPDATE_REQ;
+               msg.payload[0] = shmem_msg->getAddress();
+               msg.payload[1] = shmem_msg->getPhysAddress();
+               break;
+            default:
+               LOG_PRINT_ERROR("Not implemented");
+         }
          break;
       case MemComponent::GMM_CORE:
-         policy->handleMsgFromGMM(sender, shmem_msg);
+         switch (policy)
+         {
+            case SUBSCRIPTION:
+               msg.type = shmem_msg->getMsgType();
+               msg.payload[0] = shmem_msg->getAddress();
+               msg.payload[1] = shmem_msg->getPhysAddress();
+               break;
+            default:
+               LOG_PRINT_ERROR("Not implemented");
+         }
          break;
-
+      case MemComponent::LAST_LEVEL_CACHE:
+         switch (policy)
+         {
+            case SUBSCRIPTION:
+            case REPLICATION:
+               LOG_ASSERT_ERROR(shmem_msg->getMsgType() == ShmemMsg::INV_REP || shmem_msg->getMsgType() == ShmemMsg::SH_REQ, "Unrecognized message type.");
+               msg.type = shmem_msg->getMsgType();
+               msg.payload[0] = shmem_msg->getAddress();
+               break;
+            default:
+               LOG_PRINT_ERROR("Not implemented");
+         }
+         break;
       default:
-         LOG_PRINT_ERROR("Unrecognized sender component(%u)",
-               sender_mem_component);
-         break;
+         LOG_PRINT_ERROR("Not implemented");
    }
-}
-
-PolicyBase*
-GMMCore::policyLookup(IntPtr address)
-{
-   PolicyBase *policy = m_directory_policy;
-   m_segment_table_lock.acquire_read();
-   for (const auto& seg : m_segment_table)
-      if (seg.contains(address) && seg.m_policy)
-      {
-         policy = seg.m_policy;
-         break;
-      }
-
-   m_segment_table_lock.release_read();
-
-   return policy;
-}
-
-void
-GMMCore::Command(uint64_t cmd_type, IntPtr start, uint64_t arg1)
-{
-   // if (cmd_type == 0)
-   //    createSegment(start, arg1);
-   // else if (cmd_type == 1)
-   //    segmentAssignPolicy(start, arg1);
-}
-
-void
-GMMCore::createSegment(IntPtr start, uint64_t length)
-{
-   Segment new_seg{0, start, start + length, NULL};
-   m_segment_table_lock.acquire();
-
-   for (const auto& seg : m_segment_table)
-      assert(seg != new_seg);
-
-   m_segment_table.push_back(new_seg);
-   m_segment_table_lock.release();
-
-
-   MYLOG("Created segment: %p - %p", (void *)new_seg.m_start, (void *)new_seg.m_end);
-
-}
-
-void
-GMMCore::segmentAssignPolicy(IntPtr start, uint64_t policy_id)
-{
-   // m_segment_table_lock.acquire();
-   // for (auto& seg : m_segment_table)
-   // {
-   //    if (seg.m_start == start)
-   //    {
-   //       if (policy_id == 1)
-   //       {
-   //          seg.m_policy = new ReplicationPolicy(getCore(),
-   //                this,
-   //                m_dram_controller_home_lookup,
-   //                1024 * 1024,
-   //                getShmemPerfModel());
-   //       }
-   //       else
-   //       {
-   //          if (seg.m_policy)
-   //             delete seg.m_policy;
-   //          seg.m_policy = NULL;
-   //       }
-
-   //       MYLOG("Segment assign policy: %p - %d", (void *)seg.m_start, policy_id);
-   //    }
-   // }
-   // m_segment_table_lock.release();
 }
 
 
@@ -215,27 +430,359 @@ GMMCore::segmentAssignPolicy(IntPtr start, uint64_t policy_id)
 // }
 
 void
-GMMCore::enqueueMessage(const ShmemMsg *msg)
+GMMCore::enqueueMessage(Sift::GMMCoreMessage *msg)
 {
    m_msg_queue_lock.acquire();
-   m_msg_queue.emplace(*msg);
+
+   SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD);
+   m_msg_queue.push_back(std::make_pair(msg, msg_time));
    if (m_msg_queue.size() == 1)
       m_msg_cond.signal();
 
    m_msg_queue_lock.release();
 }
 
-void
-GMMCore::dequeueMessage(ShmemMsg *msg)
+Sift::GMMCoreMessage *
+GMMCore::dequeueMessage()
 {
+   Sift::GMMCoreMessage *msg;
    m_msg_queue_lock.acquire();
-   if (m_msg_queue.empty())
-      m_msg_cond.wait(m_msg_queue_lock);
+   while (true)
+   {
+      if (m_msg_queue.empty())
+      {
+         {
+            // ScopedLock sl(Sim()->getThreadManager()->getLock());
+            Sim()->getThreadManager()->stallThread_async(m_core_id, ThreadManager::STALL_GMM_PULL,
+                                                         getPerformanceModel()->getElapsedTime());
+            getPerformanceModel()->queuePseudoInstruction(new UnknownInstruction(getDvfsDomain()->getPeriod()));
+            getPerformanceModel()->iterate();
+         }
+         m_msg_cond.wait(m_msg_queue_lock);
 
-   *msg = m_msg_queue.front();
-   m_msg_queue.pop();
+         SubsecondTime time_wake = getPerformanceModel()->getElapsedTime(); //Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
+         {
+            // ScopedLock sl(Sim()->getThreadManager()->getLock());
+            Sim()->getThreadManager()->resumeThread_async(m_core_id, INVALID_THREAD_ID, time_wake, NULL);
+         }
+         LOG_ASSERT_ERROR(m_thread && m_thread->getCore(), "GMM thread not resumed on GMM Core.");
+      }
+
+      // Waken by signalStop
+      if (m_msg_queue.empty())
+      {
+         return NULL;
+      }
+
+      msg = m_msg_queue.front().first;
+      SubsecondTime msg_time = m_msg_queue.front().second;
+      m_msg_queue.pop_front();
+
+      // getShmemPerfModel()->updateElapsedTime(msg_time, ShmemPerfModel::_USER_THREAD);
+      SubsecondTime now = getPerformanceModel()->getElapsedTime();
+      msg_time = msg_time > now ? msg_time : now;
+      getPerformanceModel()->queuePseudoInstruction(new SyncInstruction(msg_time, SyncInstruction::SYSCALL));
+
+      LOG_PRINT_WARNING("[%d]dequeue time: %s, addr=%lx, type=%d", m_core_id, itostr(msg_time).c_str(), msg->payload[0], msg->type);
+      break;
+      // if (executeSoftwarePolicy(msg))
+      //    break;
+   }
    m_msg_queue_lock.release();
+   return msg;
 }
 
+// bool
+// GMMCore::executeSoftwarePolicy(Sift::GMMCoreMessage *msg)
+// {
+//    bool exec = false;
+//    switch (msg->policy)
+//    {
+//       case REPLICATION:
+//          IntPtr addr = msg->payload[0];
+//          exec = m_tlb.count({addr, addr + 1}) == 0;
+//          break;
+//       default:
+//          LOG_PRINT_ERROR("Unrecognized policy");
+//    }
+//
+//    return exec;
+// }
+
+void
+GMMCore::sendDataToDram(IntPtr address, core_id_t requester, Byte* data_buf, SubsecondTime now)
+{
+   MYLOG("Start @ %lx", address);
+
+   // Write data to Dram
+   core_id_t dram_node = m_core_id; // m_dram_controller_home_lookup->getHome(address);
+
+   getGlobalMemoryManager()->sendMsg(ShmemMsg::DRAM_WRITE_REQ,
+         MemComponent::GMM_CORE, MemComponent::DRAM,
+         requester /* requester */,
+         dram_node /* receiver */,
+         INVALID_ADDRESS, /* vaddr is unused */
+         address,
+         data_buf, getMemoryManager()->getCacheBlockSize(),
+         HitWhere::UNKNOWN,
+         &m_dummy_shmem_perf,
+         ShmemPerfModel::_SIM_THREAD);
+
+   // DRAM latency is ignored on write
+   MYLOG("End @ %lx", address);
+}
+
+void
+GMMCore::handleMsgFromDRAM(core_id_t sender, ShmemMsg* shmem_msg)
+{
+   MYLOG("Start");
+   ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
+
+   switch (shmem_msg_type)
+   {
+      case ShmemMsg::DRAM_READ_REP:
+         processDRAMReply(sender, shmem_msg);
+         break;
+
+      default:
+         LOG_PRINT_ERROR("Unrecognized Shmem Msg Type: %u", shmem_msg_type);
+         break;
+   }
+   MYLOG("End");
+}
+
+void
+GMMCore::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
+{
+   IntPtr address = shmem_msg->getAddress();
+
+   MYLOG("Start @ %lx", address);
+   // Data received from DRAM
+
+   //   Which node to reply to?
+
+   assert(m_dram_queue_list->size(address) >= 1);
+   ShmemReq* shmem_req = m_dram_queue_list->front(address);
+   updateShmemPerf(shmem_req);
+
+   //   Which reply type to use?
+
+   ShmemMsg::msg_t reply_msg_type;
+
+   updateShmemPerf(shmem_req, ShmemPerf::TD_ACCESS);
+
+   switch(shmem_req->getShmemMsg()->getMsgType())
+   {
+      case ShmemMsg::SH_REQ:
+         reply_msg_type = ShmemMsg::SH_REP;
+         break;
+      // case ShmemMsg::EX_REQ:
+      //    reply_msg_type = ShmemMsg::EX_REP;
+      //    assert(curr_dstate == DirectoryState::MODIFIED);
+      //    break;
+      // case ShmemMsg::UPGRADE_REQ:
+      // {
+      //    // if we had to get the data from DRAM, nobody has it anymore: send EX_REP
+      //    reply_msg_type = ShmemMsg::EX_REP;
+      //    break;
+      // }
+      default:
+         LOG_PRINT_ERROR("Unsupported request type: %u", shmem_req->getShmemMsg()->getMsgType());
+   }
+
+   //   Which HitWhere to report?
+   HitWhere::where_t hit_where = shmem_msg->getWhere();
+   if (hit_where == HitWhere::DRAM)
+      hit_where = (sender == shmem_msg->getRequester()) ? HitWhere::DRAM_LOCAL : HitWhere::DRAM_REMOTE;
+
+   // if (hit_where == HitWhere::DRAM_REMOTE)
+   // {
+   //    LOG_PRINT_WARNING("Directory Policy: Remote DRAM access: va = %p", address);
+   // }
+   // else
+   // {
+   //    LOG_PRINT_WARNING("Directory Policy: Local DRAM access: va = %p", address);
+   // }
+
+   //   Send reply
+   MYLOG("MSG DRAM>%d for %lx", shmem_req->getShmemMsg()->getRequester(), address )
+   getGlobalMemoryManager()->sendMsg(reply_msg_type,
+         MemComponent::GMM_CORE, MemComponent::L2_CACHE,
+         shmem_req->getShmemMsg()->getRequester() /* requester */,
+         shmem_req->getShmemMsg()->getRequester() /* receiver */,
+         address,
+         shmem_msg->getDataBuf(), getMemoryManager()->getCacheBlockSize(),
+         hit_where,
+         shmem_req->getShmemMsg()->getPerf(),
+         ShmemPerfModel::_SIM_THREAD);
+
+   // Process Next Request
+   processNextReqFromL2Cache(address);
+   MYLOG("End @ %lx", address);
+
+}
+
+void
+GMMCore::processInvRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
+{
+   IntPtr address = shmem_msg->getAddress();
+
+   MYLOG("Start @ %lx", address);
+
+   policy_id_t policy_id = Sim()->getSegmentTable()->lookup(address);
+   LOG_ASSERT_ERROR(policy_id != DIRECTORY_COHERENCE, "Wrong place for directory coherence.");
+
+   Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
+   buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+   enqueueMessage(core_msg);
+
+   MYLOG("End @ %lx", address);
+}
+
+void
+GMMCore::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
+      core_id_t receiver, IntPtr address, Byte* cached_data_buf, ShmemMsg *orig_shmem_msg)
+{
+   MYLOG("Start @ %lx", address);
+   assert(m_dram_queue_list->size(address) > 0);
+   ShmemReq* shmem_req = m_dram_queue_list->front(address);
+
+   // Get the data from DRAM
+   // This could be directly forwarded to the cache or passed
+   // through the Dram Directory Controller
+
+   // Remember that this request is waiting for data, and should not be woken up by voluntary invalidates
+   shmem_req->setWaitForData(true);
+
+   core_id_t dram_node = m_core_id; // m_dram_controller_home_lookup->getHome(address);
+
+   IntPtr phys_address = orig_shmem_msg->getPhysAddress();
+   assert(phys_address != INVALID_ADDRESS);
+
+   MYLOG("Sending request to DRAM for the data");
+   getGlobalMemoryManager()->sendMsg(ShmemMsg::DRAM_READ_REQ,
+         MemComponent::GMM_CORE, MemComponent::DRAM,
+         receiver /* requester */,
+         dram_node /* receiver */,
+         address,
+         phys_address,
+         NULL, 0,
+         HitWhere::UNKNOWN,
+         orig_shmem_msg->getPerf(),
+         ShmemPerfModel::_SIM_THREAD);
+
+   MYLOG("End @ %lx", address);
+}
+
+void
+GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
+{
+   getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, now);
+   LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d", m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(), msg->type);
+   switch (msg->type)
+   {
+      case ShmemMsg::ATOMIC_UPDATE_REP:
+      case ShmemMsg::GMM_USER_DONE:
+      case ShmemMsg::INV_REQ:
+      case ShmemMsg::TLB_INSERT:
+         if (msg->component == MemComponent::LAST_LEVEL_CACHE)
+            msg->receiver = getGlobalMemoryManager()->getUserFromId(m_core_id);
+         getGlobalMemoryManager()->sendMsg(static_cast<ShmemMsg::msg_t>(msg->type),
+               MemComponent::GMM_CORE, static_cast<MemComponent::component_t>(msg->component),
+               msg->requester /* requester */,
+               msg->receiver /* receiver */,
+               msg->payload[0],
+               msg->payload[1],
+               NULL, 0,
+               HitWhere::UNKNOWN,
+               &m_dummy_shmem_perf,
+               ShmemPerfModel::_USER_THREAD);
+         LOG_PRINT_WARNING("Forwarding msg (type=%d) to node %d", msg->type, msg->receiver);
+         break;
+      case ShmemMsg::ATOMIC_UPDATE_MSG:
+         for (core_id_t dest_core_id = (core_id_t)Sim()->getConfig()->getApplicationCores();
+              dest_core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); dest_core_id ++)
+         {
+            if (dest_core_id == m_core_id)
+               continue;
+
+            getGlobalMemoryManager()->sendMsg(ShmemMsg::ATOMIC_UPDATE_MSG,
+                  MemComponent::GMM_CORE, MemComponent::GMM_CORE,
+                  msg->requester /* requester */,
+                  dest_core_id /* receiver */,
+                  msg->payload[0],
+                  msg->payload[1],
+                  NULL, 0,
+                  HitWhere::UNKNOWN,
+                  &m_dummy_shmem_perf,
+                  ShmemPerfModel::_USER_THREAD);
+
+            LOG_PRINT_WARNING("ATOMIC_UPDATE_MSG %d>%d", m_core_id, dest_core_id);
+         }
+         break;
+      // case TLB_INSERT:
+      //    getGlobalMemoryManager()->sendMsg(ShmemMsg::TLB_INSERT,
+      //          MemComponent::GMM_CORE, MemComponent::GMM_CORE,
+      //          m_core_id /* requester */,
+      //          m_core_id /* receiver */,
+      //          msg->payload[0],
+      //          msg->payload[1],
+      //          NULL, 0,
+      //          HitWhere::UNKNOWN,
+      //          &m_dummy_shmem_perf,
+      //          ShmemPerfModel::_USER_THREAD);
+      //    break;
+      // case INV_REQ:
+      //    getGlobalMemoryManager()->sendMsg(ShmemMsg::INV_REQ,
+      //          MemComponent::GMM_CORE, MemComponent::LAST_LEVEL_CACHE,
+      //          msg->requester /* requester */,
+      //          getGlobalMemoryManager()->getUserFromId(m_core_id) /* receiver */,
+      //          msg->payload[0],
+      //          msg->payload[1],
+      //          NULL, 0,
+      //          HitWhere::UNKNOWN,
+      //          &m_dummy_shmem_perf,
+      //          ShmemPerfModel::_USER_THREAD);
+      //    break;
+      // case ATOMIC_UPDATE_REQ:
+      //    {
+      //       getGlobalMemoryManager()->sendMsg(ShmemMsg::ATOMIC_UPDATE_MSG,
+      //             MemComponent::GMM_CORE, MemComponent::GMM_CORE,
+      //             msg->requester /* requester */,
+      //             msg->receiver /* receiver */,
+      //             msg->payload[0],
+      //             msg->payload[1],
+      //             NULL, 0,
+      //             HitWhere::UNKNOWN,
+      //             &m_dummy_shmem_perf,
+      //             ShmemPerfModel::_USER_THREAD);
+      //    }
+
+      default:
+         LOG_PRINT_ERROR("Unrecognized Shmem Msg Type: %u", msg->type);
+   }
+}
+
+void
+GMMCore::policyInit(int policy_id, uint64_t start, uint64_t end)
+{
+   Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
+   core_msg->policy = policy_id;
+   core_msg->type = ShmemMsg::POLICY_INIT;
+   core_msg->requester = m_core_id;
+   core_msg->sender = m_core_id;
+   core_msg->payload[0] = start;
+   core_msg->payload[1] = end;
+   enqueueMessage(core_msg);
+}
+
+void
+GMMCore::signalStop()
+{
+   m_msg_queue_lock.acquire();
+   m_msg_queue.clear();
+   m_msg_cond.signal();
+   m_msg_queue_lock.release();
+}
 
 }

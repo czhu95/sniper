@@ -19,6 +19,12 @@ class ThreadManager
 public:
    typedef void *(*thread_func_t)(void *);
 
+   enum thread_group_t {
+      USER_THREAD,
+      GMM_THREAD,
+      UNKNOWN_THREAD,
+   };
+
    enum stall_type_t {
       STALL_UNSCHEDULED,      // Thread is not scheduled on any core
       STALL_BROKEN,           // Thread is on a core that suffered hardware failure
@@ -31,9 +37,12 @@ public:
       STALL_SLEEP,            // sleep system call
       STALL_SYSCALL,          // blocking system call
       STALL_VCPU_HALT,        // system vcpu is being halted
+      STALL_GMM_PULL,         // GMM core is waiting for message
       STALL_TYPES_MAX,
    };
    static const char* stall_type_names[];
+
+   static thread_group_t getThreadGroup(thread_id_t);
 
    ThreadManager();
    ~ThreadManager();
@@ -138,6 +147,10 @@ public:
    void onThreadExit(thread_id_t thread_id) override;
 
    void moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time) override;
+};
+
+class GMMThreadManager : public SystemThreadManager
+{
 };
 
 #endif // THREAD_MANAGER_H

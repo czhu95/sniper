@@ -38,6 +38,12 @@ public:
       HOOK_APPLICATION_ROI_BEGIN, // none                            ROI begin, always triggers
       HOOK_APPLICATION_ROI_END,   // none                            ROI end, always triggers
       HOOK_SIGUSR1,             // none                              Sniper process received SIGUSR1
+      // HOOK_GMM_THREAD_CREATE,   // HooksManager::GMMThreadCreate     GMM Thread creation
+      // HOOK_GMM_THREAD_START,    // HooksManager::GMMThreadTime       GMM Thread start
+      // HOOK_GMM_THREAD_EXIT,     // HooksManager::GMMThreadTime       GMM Thread end
+      // HOOK_GMM_THREAD_STALL,    // HooksManager::GMMThreadStall      GMM Thread has entered stalled state
+      // HOOK_GMM_THREAD_RESUME,   // HooksManager::GMMThreadResume     GMM Thread has entered running state
+      // HOOK_GMM_THREAD_MIGRATE,  // HooksManager::GMMThreadMigrate    GMM Thread was moved to a different core
       HOOK_TYPES_MAX
    };
    static const char* hook_type_names[];

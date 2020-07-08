@@ -23,8 +23,6 @@ class DramCache;
 namespace SingleLevelMemory
 {
    class GMMCoreFast;
-   class PolicyBase;
-   class DirectoryMSIPolicy;
    class Segment;
 
    typedef std::pair<core_id_t, MemComponent::component_t> CoreComponentType;
@@ -53,10 +51,6 @@ namespace SingleLevelMemory
 
          ShmemPerf m_dummy_shmem_perf;
 
-         DirectoryMSIPolicy* m_default_policy;
-         std::vector<Segment> m_segment_table;
-         Lock m_segment_table_lock;
-
          UInt32 m_shared_cores;
 
          // Performance Models
@@ -67,9 +61,6 @@ namespace SingleLevelMemory
 
          std::vector<core_id_t> m_core_list_with_dram_controllers;
          std::vector<core_id_t> m_core_list_with_gmm;
-
-         void createSegment(IntPtr start, uint64_t length);
-         void segmentAssignPolicy(IntPtr start, uint64_t policy_id);
 
       public:
          GlobalMemoryManager(Core* core, Network* network, ShmemPerfModel* shmem_perf_model);
@@ -124,9 +115,7 @@ namespace SingleLevelMemory
          void incrElapsedTime(SubsecondTime latency, ShmemPerfModel::Thread_t thread_num = ShmemPerfModel::NUM_CORE_THREADS);
          void incrElapsedTime(MemComponent::component_t mem_component, CachePerfModel::CacheAccess_t access_type, ShmemPerfModel::Thread_t thread_num = ShmemPerfModel::NUM_CORE_THREADS);
 
-         void Command(uint64_t cmd_type, IntPtr start, uint64_t arg1) override;
-         PolicyBase *policyLookup(IntPtr address);
-
          core_id_t getGMMFromId(core_id_t core_id);
+         core_id_t getUserFromId(core_id_t core_id);
    };
 }

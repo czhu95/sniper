@@ -135,7 +135,8 @@ int main(int argc, char **argv)
    PIN_InitLock(&access_memory_lock);
    PIN_InitLock(&new_threadid_lock);
 
-   app_id = KnobSiftAppId.Value();
+   app_id = -1; // KnobSiftAppId.Value();
+   std::cerr << "appid = " << app_id << std::endl;
    blocksize = KnobBlocksize.Value();
    fast_forward_target = KnobFastForwardTarget.Value();
    detailed_target = KnobDetailedTarget.Value();

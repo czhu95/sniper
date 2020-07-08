@@ -27,7 +27,7 @@ class SchedulerPinnedBase : public SchedulerDynamic
             ThreadInfo()
                : m_has_affinity(false)
                , m_explicit_affinity(false)
-               , m_core_affinity(Sim()->getConfig()->getApplicationCores(), false)
+               , m_core_affinity(Sim()->getConfig()->getTotalCores(), false)
                , m_core_running(INVALID_CORE_ID)
                , m_last_scheduled_in(SubsecondTime::Zero())
                , m_last_scheduled_out(SubsecondTime::Zero())

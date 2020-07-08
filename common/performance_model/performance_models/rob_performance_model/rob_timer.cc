@@ -13,13 +13,14 @@
 #include "core_model.h"
 #include "rob_contention.h"
 #include "instruction.h"
+#include "gmm_core.h"
 
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 
 // Define to get per-cycle printout of dispatch, issue, writeback stages
-// #define DEBUG_PERCYCLE
+//#define DEBUG_PERCYCLE
 
 // Define to not skip any cycles, but assert that the skip logic is working fine
 //#define ASSERT_SKIP
@@ -397,7 +398,10 @@ boost::tuple<uint64_t,SubsecondTime> RobTimer::simulate(const std::vector<Dynami
       totalInsnExec += instructionsExecuted;
       totalLat += latency;
       if (latency == SubsecondTime::Zero())
+      {
+         // LOG_ASSERT_ERROR(m_core->getThread() || m_num_in_rob < 2, "");
          break;
+      }
    }
 
    return boost::tuple<uint64_t,SubsecondTime>(totalInsnExec, totalLat);
@@ -446,6 +450,12 @@ SubsecondTime RobTimer::doDispatch(SubsecondTime **cpiComponent)
 
       while(m_num_in_rob < windowSize)
       {
+         if (m_num_in_rob == rob.size())
+         {
+            LOG_ASSERT_ERROR(!m_core->getThread(), "Active core expect more uops.");
+            break;
+         }
+
          LOG_ASSERT_ERROR(m_num_in_rob < rob.size(), "Expected sufficient uops for dispatching in pre-ROB buffer, but didn't find them");
          RobEntry *entry = &rob.at(m_num_in_rob);
          DynamicMicroOp &uop = *entry->uop;
@@ -622,6 +632,19 @@ void RobTimer::issueInstruction(uint64_t idx, SubsecondTime &next_event)
       LOG_ASSERT_ERROR(entry->addressReady <= entry->ready, "%ld: Store address cannot be ready (%ld) later than the whole uop is (%ld)",
                        entry->uop->getSequenceNumber(), entry->addressReady.getPS(), entry->ready.getPS());
    }
+
+   if (uop.getMicroOp()->isGMMCore())
+   {
+       SingleLevelMemory::GMMCore *gmm_core = dynamic_cast<SingleLevelMemory::GMMCore *>(m_core);
+       LOG_ASSERT_ERROR(gmm_core, "GMM MicroOp can only be executed on GMM Core.");
+       gmm_core->handleGMMCoreMessage(uop.getGMMCoreMessage(), now);
+   }
+
+   if (uop.getMicroOp()->isGMMUser())
+   {
+       m_core->handleGMMUserMessage(uop.getGMMUserMessage(), now);
+   }
+
 
    if (m_rob_contention)
       m_rob_contention->doIssue(uop);
@@ -886,7 +909,7 @@ void RobTimer::execute(uint64_t& instructionsExecuted, SubsecondTime& latency)
    // If frontend not stalled
    if (frontend_stalled_until <= now)
    {
-      if (rob.size() < m_num_in_rob + 2*dispatchWidth)
+      if (rob.size() == 0 || (m_core->getThread() && rob.size() < m_num_in_rob + 2*dispatchWidth))
       {
          // We don't have enough instructions to dispatch <dispatchWidth> new ones. Ask for more before doing anything this cycle.
          return;

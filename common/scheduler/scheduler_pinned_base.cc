@@ -192,6 +192,7 @@ void SchedulerPinnedBase::threadStall(thread_id_t thread_id, ThreadManager::stal
 
 void SchedulerPinnedBase::threadResume(thread_id_t thread_id, thread_id_t thread_by, SubsecondTime time)
 {
+   assert(m_threads_runnable[thread_id]);
    // If our core is currently idle, schedule us now
    core_id_t free_core_id = findFreeCoreForThread(thread_id);
    if (free_core_id != INVALID_THREAD_ID)

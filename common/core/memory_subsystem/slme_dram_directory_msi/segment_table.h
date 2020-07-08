@@ -1,8 +1,16 @@
 #pragma once
 
 // #include <map>
+#include "lock.h"
 #include "fixed_types.h"
-#include <set>
+#include <map>
+
+typedef int32_t policy_id_t;
+
+#define DIRECTORY_COHERENCE 0
+#define REPLICATION         1
+#define ATOMIC_UPDATE       2
+#define SUBSCRIPTION        3
 
 namespace SingleLevelMemory
 {
@@ -25,8 +33,6 @@ namespace SingleLevelMemory
       uint64_t m_segment_id;
       uint64_t m_start;
       uint64_t m_end;
-      PolicyBase *m_policy;
-
 
       bool contains(IntPtr address) const
       {
@@ -47,11 +53,6 @@ namespace SingleLevelMemory
       {
          return !(lhs == rhs);
       }
-   };
-
-   struct Policy
-   {
-      uint64_t m_policy_id;
    };
 
    struct Subsegment
@@ -82,14 +83,17 @@ namespace SingleLevelMemory
    class SegmentTable
    {
       protected:
-         GlobalMemoryManager* m_memory_manager;
-         std::set<Subsegment> m_table;
+         std::map<Segment, policy_id_t> m_table;
+         Lock m_lock;
 
       public:
-         SegmentTable(GlobalMemoryManager *memory_manager);
+         SegmentTable();
 
-         void insert(uint64_t start, uint64_t end, uint64_t paddr, dstate_t state);
-         dstate_t lookup(IntPtr vaddr, IntPtr &paddr);
+         policy_id_t lookup(IntPtr vaddr);
+         void command(uint64_t cmd_type, IntPtr start, uint64_t arg1);
+         void create(IntPtr start, uint64_t length);
+         void assign(IntPtr start, policy_id_t policy_id);
+
+         static bool bypassCache(policy_id_t policy_id);
    };
-
 }

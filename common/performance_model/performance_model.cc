@@ -19,7 +19,9 @@ PerformanceModel* PerformanceModel::create(Core* core)
    String type;
 
    try {
-      type = Sim()->getCfg()->getStringArray("perf_model/core/type", core->getId());
+      type = core->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
+             Sim()->getCfg()->getStringArray("perf_model/core/type", core->getId()) :
+             Sim()->getCfg()->getStringArray("perf_model/gmm/core/type", core->getId());
    } catch (...) {
       LOG_PRINT_ERROR("No perf model type provided.");
    }
@@ -35,7 +37,8 @@ PerformanceModel* PerformanceModel::create(Core* core)
    else if (type == "rob")
    {
       uint32_t smt_threads = core->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
-                             Sim()->getCfg()->getIntArray("perf_model/core/logical_cpus", core->getId()) : 1;
+                             Sim()->getCfg()->getIntArray("perf_model/core/logical_cpus", core->getId()) :
+                             Sim()->getCfg()->getIntArray("perf_model/gmm/core/logical_cpus", core->getId());
       if (smt_threads == 1)
          return new RobPerformanceModel(core);
       else

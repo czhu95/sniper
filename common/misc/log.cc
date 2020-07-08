@@ -26,7 +26,7 @@ static String formatFileName(const char* s)
 }
 
 Log::Log(Config &config)
-   : _coreCount(config.getApplicationCores())
+   : _coreCount(config.getTotalCores())
    , _startTime(0)
 {
    initFileDescriptors();
@@ -201,6 +201,13 @@ void Log::discoverCore(core_id_t *core_id, bool *sim_thread)
    {
       *core_id = core_manager->getCurrentCoreID();
       *sim_thread = core_manager->amiSimThread();
+
+      if (*core_id == INVALID_CORE_ID)
+      {
+         core_manager = Sim()->getGMMCoreManager();
+         *core_id = core_manager->getCurrentCoreID();
+         *sim_thread = core_manager->amiSimThread();
+      }
    }
 }
 

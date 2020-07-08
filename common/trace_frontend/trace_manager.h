@@ -41,9 +41,9 @@ class TraceManager
 
    public:
       void start();
-      void stop();
       void mark_done();
       void wait();
+      virtual void stop();
       virtual void run();
       virtual void init() = 0;
       virtual void cleanup() = 0;
@@ -126,6 +126,7 @@ class GMMTraceManager : public SystemTraceManager
       ~GMMTraceManager() override {}
       void init() override;
       void run() override;
+      void stop() override;
       void setupTraceFiles(int index) override;
 };
 

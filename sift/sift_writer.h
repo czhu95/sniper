@@ -88,6 +88,7 @@ namespace Sift
          void VCPUIdle();
          void VCPUResume();
          void GMMCommand(uint64_t cmd_type, uintptr_t segment, uint64_t arg1);
+         void SendGMMUserMessage(Sift::GMMUserMessage &msg);
          void SendGMMCoreMessage(Sift::GMMCoreMessage &msg);
          void PullGMMCoreMessage(Sift::GMMCoreMessage &msg);
 

@@ -2,6 +2,7 @@
 #include "sift_assert.h"
 #include "globals.h"
 #include "threads.h"
+#include "recorder_control.h"
 
 #include <iostream>
 #include <unistd.h>
@@ -79,8 +80,9 @@ VOID emulateSyscallFunc(THREADID threadid, CONTEXT *ctxt)
 
    if (thread_data[threadid].icount_reported > 0)
    {
-      thread_data[threadid].output->InstructionCount(thread_data[threadid].icount_reported);
+      Sift::Mode mode = thread_data[threadid].output->InstructionCount(thread_data[threadid].icount_reported);
       thread_data[threadid].icount_reported = 0;
+      setInstrumentationMode(mode);
    }
 
    // Default: not emulated, override later when needed

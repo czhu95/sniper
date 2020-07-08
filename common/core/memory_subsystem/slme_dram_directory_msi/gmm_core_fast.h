@@ -17,6 +17,7 @@ class NucaCache;
 namespace SingleLevelMemory
 {
    class GlobalMemoryManager;
+   class PolicyBase;
 
    class GMMCoreFast
    {
@@ -29,9 +30,9 @@ namespace SingleLevelMemory
          // UInt32 m_cache_block_size;
 
          ShmemPerfModel* m_shmem_perf_model;
-
          SegmentTable* m_segment_table;
-
+         PolicyBase* m_default_policy;
+         AddressHomeLookup *m_dram_controller_home_lookup;
          // UInt32 getCacheBlockSize() { return m_cache_block_size; }
          GlobalMemoryManager* getMemoryManager() { return m_memory_manager; }
          ShmemPerfModel* getShmemPerfModel() { return m_shmem_perf_model; }
@@ -48,6 +49,7 @@ namespace SingleLevelMemory
       public:
          GMMCoreFast(core_id_t core_id,
                GlobalMemoryManager* memory_manager,
+               std::vector<core_id_t>& core_list_with_dram_controllers,
                ShmemPerfModel* shmem_perf_model);
          ~GMMCoreFast();
 

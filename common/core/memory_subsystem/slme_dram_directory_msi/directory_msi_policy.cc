@@ -106,8 +106,11 @@ DirectoryMSIPolicy::handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr pa = shmem_msg->getPhysAddress();
 
-   core_id_t home_node = m_dram_controller_home_lookup->getHome(pa);
-   assert(home_node == m_core_id);
+   if (sender != m_core_id)
+   {
+      core_id_t home_node = m_dram_controller_home_lookup->getHome(pa);
+      assert(home_node == m_core_id);
+   }
 
    handleMsgFromL2Cache(shmem_msg->getRequester(), shmem_msg);
 }
@@ -130,7 +133,7 @@ DirectoryMSIPolicy::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
    //    shmem_msg->setPhysAddress(pa);
    // }
 
-   core_id_t home_node = m_dram_controller_home_lookup->getHome(pa);
+   core_id_t home_node = sender == m_core_id ? m_core_id : m_dram_controller_home_lookup->getHome(pa);
    if (home_node != m_core_id)
    {
       MYLOG("Forward L2 REQ to home GMM %u", home_node);

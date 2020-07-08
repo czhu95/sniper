@@ -54,6 +54,9 @@ UInt64 ThreadStatsManager::callThreadStatCallback(ThreadStatType type, thread_id
 
 void ThreadStatsManager::update(thread_id_t thread_id, SubsecondTime time)
 {
+   if (thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    if (time == SubsecondTime::MaxTime())
       time = Sim()->getClockSkewMinimizationServer()->getGlobalTime();
 
@@ -61,7 +64,7 @@ void ThreadStatsManager::update(thread_id_t thread_id, SubsecondTime time)
 
    if (thread_id == INVALID_THREAD_ID)
    {
-      for(thread_id = 0; thread_id < (thread_id_t)Sim()->getThreadManager()->getNumThreads(); ++thread_id)
+      for(thread_id = 0; thread_id < (thread_id_t)Sim()->getConfig()->getApplicationCores(); ++thread_id)
          if (m_threads_stats[thread_id])
             m_threads_stats[thread_id]->update(time);
    }
@@ -82,7 +85,7 @@ void ThreadStatsManager::calculateWaitingCosts(SubsecondTime time)
    {
       SubsecondTime time_delta = time - m_waiting_time_last;
       UInt32 n_running = 0, n_stalled = 0, n_total = Sim()->getConfig()->getApplicationCores();
-      for(thread_id_t thread_id = 0; thread_id < (thread_id_t)Sim()->getThreadManager()->getNumThreads(); ++thread_id)
+      for(thread_id_t thread_id = 0; thread_id < (thread_id_t)Sim()->getConfig()->getApplicationCores(); ++thread_id)
       {
          if (Sim()->getThreadManager()->isThreadRunning(thread_id))
             ++n_running;
@@ -95,7 +98,7 @@ void ThreadStatsManager::calculateWaitingCosts(SubsecondTime time)
       if (n_stalled && n_running <= n_total)
       {
          SubsecondTime cost = (n_total - n_running) * time_delta / n_stalled;
-         for(thread_id_t thread_id = 0; thread_id < (thread_id_t)Sim()->getThreadManager()->getNumThreads(); ++thread_id)
+         for(thread_id_t thread_id = 0; thread_id < (thread_id_t)Sim()->getConfig()->getApplicationCores(); ++thread_id)
          {
             if (!Sim()->getThreadManager()->isThreadRunning(thread_id)
                 && Sim()->getThreadManager()->getThreadStallReason(thread_id) != ThreadManager::STALL_UNSCHEDULED)
@@ -134,12 +137,18 @@ void ThreadStatsManager::pre_stat_write()
 
 void ThreadStatsManager::threadCreate(thread_id_t thread_id)
 {
+   if (thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    LOG_ASSERT_ERROR(thread_id < MAX_THREADS, "Too many application threads, increase MAX_THREADS");
    m_threads_stats[thread_id] = new ThreadStats(thread_id);
 }
 
 void ThreadStatsManager::threadStart(thread_id_t thread_id, SubsecondTime time)
 {
+   if (thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    m_threads_stats[thread_id]->update(time, true);
    m_bottlegraphs.threadStart(thread_id);
    m_bottlegraphs.update(time, thread_id, true);
@@ -147,6 +156,9 @@ void ThreadStatsManager::threadStart(thread_id_t thread_id, SubsecondTime time)
 
 void ThreadStatsManager::threadStall(thread_id_t thread_id, ThreadManager::stall_type_t reason, SubsecondTime time)
 {
+   if (thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    calculateWaitingCosts(time);
    m_threads_stats[thread_id]->update(time);
    if (reason != ThreadManager::STALL_UNSCHEDULED)
@@ -155,6 +167,9 @@ void ThreadStatsManager::threadStall(thread_id_t thread_id, ThreadManager::stall
 
 void ThreadStatsManager::threadResume(thread_id_t thread_id, thread_id_t thread_by, SubsecondTime time)
 {
+   if (thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    calculateWaitingCosts(time);
    m_threads_stats[thread_id]->update(time);
    m_bottlegraphs.update(time, thread_id, true);
@@ -162,6 +177,9 @@ void ThreadStatsManager::threadResume(thread_id_t thread_id, thread_id_t thread_
 
 void ThreadStatsManager::threadExit(thread_id_t thread_id, SubsecondTime time)
 {
+   if (thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    calculateWaitingCosts(time);
    m_threads_stats[thread_id]->update(time);
    m_bottlegraphs.update(time, thread_id, false);
@@ -178,6 +196,7 @@ ThreadStatsManager::ThreadStats::ThreadStats(thread_id_t thread_id)
    , m_counts()
    , m_last()
 {
+   LOG_ASSERT_ERROR(thread_id < (thread_id_t)Sim()->getConfig()->getApplicationCores(), "Cannot create ThreadStats for GMM thread.");
    registerStatsMetric("thread", thread_id, "elapsed_time", &m_elapsed_time);
    registerStatsMetric("thread", thread_id, "unscheduled_time", &m_unscheduled_time);
    for (core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); core_id++)

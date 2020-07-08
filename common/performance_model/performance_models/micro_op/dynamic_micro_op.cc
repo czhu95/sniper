@@ -36,10 +36,18 @@ DynamicMicroOp::DynamicMicroOp(const MicroOp *uop, const CoreModel *core_model, 
 
    first = m_uop->isFirst();
    last = m_uop->isLast();
+
+   this->m_core_msg = NULL;
+   this->m_user_msg = NULL;
 }
 
 DynamicMicroOp::~DynamicMicroOp()
 {
+   if (m_core_msg)
+      delete m_core_msg;
+
+   if (m_user_msg)
+      delete m_user_msg;
 }
 
 void DynamicMicroOp::squash(std::vector<DynamicMicroOp*>* array)
@@ -135,4 +143,28 @@ bool DynamicMicroOp::isLongLatencyLoad() const
    // is above a certain cutoff value
    // Also, honor the forceLLL request if indicated
    return (m_forceLongLatencyLoad || ((cutoff > 0) && (this->execLatency > cutoff)));
+}
+
+void DynamicMicroOp::attachGMMCoreMessage(Sift::GMMCoreMessage *msg)
+{
+   LOG_ASSERT_ERROR(getMicroOp()->isGMMCore(), "Expected a gmm core instruction.");
+   LOG_ASSERT_ERROR(m_core_msg == NULL, "Already has core message attached.");
+   m_core_msg = msg;
+}
+
+void DynamicMicroOp::attachGMMUserMessage(Sift::GMMUserMessage *msg)
+{
+   LOG_ASSERT_ERROR(getMicroOp()->isGMMUser(), "Expected a gmm user instruction.");
+   LOG_ASSERT_ERROR(m_user_msg == NULL, "Already has user message attached.");
+   m_user_msg = msg;
+}
+
+Sift::GMMCoreMessage *DynamicMicroOp::getGMMCoreMessage() const
+{
+   return m_core_msg;
+}
+
+Sift::GMMUserMessage *DynamicMicroOp::getGMMUserMessage() const
+{
+   return m_user_msg;
 }

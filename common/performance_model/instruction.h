@@ -10,6 +10,12 @@
 class Core;
 class MicroOp;
 
+namespace Sift
+{
+   struct GMMCoreMessage;
+   struct GMMUserMessage;
+}
+
 enum InstructionType
 {
    INST_GENERIC,
@@ -30,12 +36,14 @@ enum InstructionType
    INST_TLB_MISS,
    INST_MEM_ACCESS, // Not a regular memory access.  These are added latencies and do not correspond to a particular instruction.  Dynamic Instruction
    INST_DELAY,
+   INST_GMM_CORE_MSG,
+   INST_GMM_USER_MSG,
    INST_UNKNOWN,
    MAX_INSTRUCTION_COUNT
 };
 
 __attribute__ ((unused)) static const char * INSTRUCTION_NAMES [] =
-{"generic","add","sub","mul","div","fadd","fsub","fmul","fdiv","jmp","branch", "dynamic_misc","recv","sync","spawn","tlb_miss","mem_access","delay","unknown"};
+{"generic","add","sub","mul","div","fadd","fsub","fmul","fdiv","jmp","branch", "dynamic_misc","recv","sync","spawn","tlb_miss","mem_access","delay","gmm_core_msg","gmm_user_msg","unknown"};
 
 class Instruction
 {
@@ -239,6 +247,34 @@ public:
    UnknownInstruction(SubsecondTime cost)
       : PseudoInstruction(cost, INST_UNKNOWN)
    { }
+};
+
+class GMMCoreMsgInstruction : public PseudoInstruction
+{
+public:
+    GMMCoreMsgInstruction(Sift::GMMCoreMessage *msg)
+       : PseudoInstruction(SubsecondTime::Zero(), INST_GMM_CORE_MSG)
+       , m_msg(msg)
+   { }
+
+   Sift::GMMCoreMessage *getMsg() const { return m_msg; }
+
+private:
+   Sift::GMMCoreMessage *m_msg;
+};
+
+class GMMUserMsgInstruction : public PseudoInstruction
+{
+public:
+    GMMUserMsgInstruction(Sift::GMMUserMessage *msg)
+       : PseudoInstruction(SubsecondTime::Zero(), INST_GMM_USER_MSG)
+       , m_msg(msg)
+   { }
+
+   Sift::GMMUserMessage *getMsg() const { return m_msg; }
+
+private:
+   Sift::GMMUserMessage *m_msg;
 };
 
 #endif

@@ -34,6 +34,8 @@ private:
    static MicroOp* m_serialize_uop;
    static MicroOp* m_mfence_uop;
    static MicroOp* m_memaccess_uop;
+   static MicroOp* m_gmmcore_uop;
+   static MicroOp* m_gmmuser_uop;
 
    Allocator *m_allocator; // Per-thread allocator for DynamicMicroOps
    const bool m_issue_memops;

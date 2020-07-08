@@ -23,10 +23,22 @@
    __builtin_unreachable()
 
 const char* ThreadManager::stall_type_names[] = {
-   "unscheduled", "broken", "join", "mutex", "cond", "barrier", "futex", "pause", "sleep", "syscall", "vcpu_halt"
+   "unscheduled", "broken", "join", "mutex", "cond", "barrier", "futex", "pause", "sleep", "syscall", "vcpu_halt", "gmm_pull"
 };
 static_assert(ThreadManager::STALL_TYPES_MAX == sizeof(ThreadManager::stall_type_names) / sizeof(char*),
               "Not enough values in ThreadManager::stall_type_names");
+
+
+ThreadManager::thread_group_t ThreadManager::getThreadGroup(thread_id_t thread_id)
+{
+   if (thread_id == INVALID_THREAD_ID || thread_id >= (thread_id_t)Sim()->getConfig()->getTotalCores())
+      return UNKNOWN_THREAD;
+
+   if (thread_id < (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return USER_THREAD;
+
+   return GMM_THREAD;
+}
 
 ThreadManager::ThreadManager()
    : m_thread_tls(TLS::create())
@@ -174,6 +186,11 @@ SubsecondTime ThreadManager::stallThread(thread_id_t thread_id, stall_type_t rea
 void ThreadManager::resumeThread_async(thread_id_t thread_id, thread_id_t thread_by, SubsecondTime time, void *msg)
 {
    LOG_PRINT("Core(%i) -> RUNNING", thread_id);
+   if (m_thread_state[thread_id].status == Core::RUNNING)
+   {
+      LOG_PRINT_WARNING("Resuming a running thread.");
+      return;
+   }
    m_thread_state[thread_id].status = Core::RUNNING;
 
    HooksManager::ThreadResume args = { thread_id: thread_id, thread_by: thread_by, time: time };

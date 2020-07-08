@@ -49,6 +49,10 @@ void TraceManager::stop()
    // Signal threads to stop.
    for(std::vector<TraceThread *>::iterator it = m_threads.begin(); it != m_threads.end(); ++it)
       (*it)->stop();
+
+   if (Sim()->getGMMTraceManager())
+      Sim()->getGMMTraceManager()->stop();
+
    // Give threads some time to end.
    sleep(1);
    // Some threads may be blocked (SIFT reader, syscall, etc.). Don't wait for them or we'll deadlock.
@@ -508,6 +512,22 @@ void GMMTraceManager::init()
       m_threads.push_back(tthread);
    }
 }
+
+void GMMTraceManager::stop()
+{
+   // Signal threads to stop.
+   for(std::vector<TraceThread *>::iterator it = m_threads.begin(); it != m_threads.end(); ++it)
+      (*it)->stop();
+
+   // Give threads some time to end.
+   sleep(1);
+   // Some threads may be blocked (SIFT reader, syscall, etc.). Don't wait for them or we'll deadlock.
+   m_done.signal();
+   // Notify SIFT recorders that simulation is done,
+   // and that they should hide their errors when writing to an already-closed SIFT pipe.
+   mark_done();
+}
+
 void GMMTraceManager::setupTraceFiles(int index)
 {
    m_tracefiles.resize(m_num_threads);
@@ -519,7 +539,7 @@ void GMMTraceManager::setupTraceFiles(int index)
 
    for (UInt32 i = 0 ; i < m_num_threads ; i++ )
    {
-      m_tracefiles[i] = m_trace_prefix + + ".app0.th" + itostr(i) + ".sift";
-      m_responsefiles[i] = m_trace_prefix + + "_response.app0.th" + itostr(i) + ".sift";
+      m_tracefiles[i] = m_trace_prefix + + ".app" + itostr(i) + ".th0.sift";
+      m_responsefiles[i] = m_trace_prefix + + "_response.app" + itostr(i) + ".th0.sift";
    }
 }

@@ -7,6 +7,8 @@
 #include "coherency_protocol.h"
 #include "config.hpp"
 #include "policy.h"
+#include "directory_msi_policy.h"
+#include "dvfs_manager.h"
 
 #if 0
    extern Lock iolock;
@@ -22,16 +24,53 @@ namespace SingleLevelMemory
 
 GMMCoreFast::GMMCoreFast(core_id_t core_id,
       GlobalMemoryManager* memory_manager,
-      ShmemPerfModel* shmem_perf_model):
+      std::vector<core_id_t>& core_list_with_dram_controllers,
+      ShmemPerfModel* shmem_perf_model) :
    m_memory_manager(memory_manager),
    m_shmem_perf_model(shmem_perf_model)
 {
-   m_segment_table = new SegmentTable(memory_manager);
+   const ComponentPeriod *global_domain = Sim()->getDvfsManager()->getGlobalDomain();
+
+   UInt32 dram_directory_total_entries = 0;
+   UInt32 dram_directory_associativity = 0;
+   UInt32 dram_directory_max_num_sharers = 0;
+   UInt32 dram_directory_max_hw_sharers = 0;
+   String dram_directory_type_str;
+   UInt32 dram_directory_home_lookup_param = 0;
+   ComponentLatency dram_directory_cache_access_time(global_domain, 0);
+
+   dram_directory_total_entries = Sim()->getCfg()->getInt("perf_model/dram_directory/total_entries");
+   dram_directory_associativity = Sim()->getCfg()->getInt("perf_model/dram_directory/associativity");
+   dram_directory_max_num_sharers = Sim()->getConfig()->getApplicationCores();
+   dram_directory_max_hw_sharers = Sim()->getCfg()->getInt("perf_model/dram_directory/max_hw_sharers");
+   dram_directory_type_str = Sim()->getCfg()->getString("perf_model/dram_directory/directory_type");
+   dram_directory_home_lookup_param = Sim()->getCfg()->getInt("perf_model/dram_directory/home_lookup_param");
+   dram_directory_cache_access_time = ComponentLatency(global_domain, Sim()->getCfg()->getInt("perf_model/dram_directory/directory_cache_access_time"));
+
+
+   m_dram_controller_home_lookup = new AddressHomeLookup(
+         dram_directory_home_lookup_param,
+         core_list_with_dram_controllers,
+         memory_manager->getCacheBlockSize());
+
+   m_default_policy = new DirectoryMSIPolicy(core_id,
+         memory_manager,
+         m_dram_controller_home_lookup,
+         dram_directory_total_entries,
+         dram_directory_associativity,
+         memory_manager->getCacheBlockSize(),
+         dram_directory_max_num_sharers,
+         dram_directory_max_hw_sharers,
+         dram_directory_type_str,
+         dram_directory_cache_access_time,
+         shmem_perf_model);
+
 }
 
 GMMCoreFast::~GMMCoreFast()
 {
-   delete m_segment_table;
+   delete m_default_policy;
+   delete m_dram_controller_home_lookup;
 }
 
 void
@@ -47,7 +86,7 @@ GMMCoreFast::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
    // bool slb_hit = false;
 
    // Look up policy
-   PolicyBase *policy = getMemoryManager()->policyLookup(address);
+   PolicyBase *policy = m_default_policy; // getMemoryManager()->policyLookup(address);
 
    MemComponent::component_t sender_mem_component = shmem_msg->getSenderMemComponent();
 

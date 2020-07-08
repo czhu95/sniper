@@ -61,7 +61,7 @@ struct MicroOp
 {
    MicroOp();
 
-   enum uop_type_t { UOP_INVALID = 0, UOP_LOAD, UOP_EXECUTE, UOP_STORE };
+   enum uop_type_t { UOP_INVALID = 0, UOP_LOAD, UOP_EXECUTE, UOP_STORE, UOP_GMM_CORE, UOP_GMM_USER };
    /** The microOperation type. */
    uop_type_t uop_type;
 
@@ -137,6 +137,8 @@ struct MicroOp
    void makeExecute(uint32_t offset, uint32_t num_loads, dl::Decoder::decoder_opcode instructionOpcode, const String& instructionOpcodeName, bool isBranch);
    void makeStore(uint32_t offset, uint32_t num_execute, dl::Decoder::decoder_opcode instructionOpcode, const String& instructionOpcodeName, uint16_t mem_size);
    void makeDynamic(const String& instructionOpcodeName, uint32_t execLatency);
+   void makeGMMCore();
+   void makeGMMUser();
 
    static uop_subtype_t getSubtype_Exec(const MicroOp& uop);
    static uop_subtype_t getSubtype(const MicroOp& uop);
@@ -211,6 +213,9 @@ struct MicroOp
    String toShortString(bool withDisassembly = false) const;
 
    bool isExecute() const { return uop_type == UOP_EXECUTE; };
+
+   bool isGMMCore() const { return uop_type == UOP_GMM_CORE; }
+   bool isGMMUser() const { return uop_type == UOP_GMM_USER; }
 
    uop_type_t getType() const { return uop_type; }
 

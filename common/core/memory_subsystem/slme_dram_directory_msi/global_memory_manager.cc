@@ -1,7 +1,6 @@
 #include "global_memory_manager.h"
 #include "gmm_core_fast.h"
 #include "gmm_core.h"
-#include "policy.h"
 #include "core_manager.h"
 #include "cache_base.h"
 #include "dram_cache.h"
@@ -13,9 +12,6 @@
 #include "config.hpp"
 #include "distribution.h"
 #include "topology_info.h"
-#include "directory_msi_policy.h"
-#include "replication_policy.h"
-#include "subscription_policy.h"
 
 #if 0
    extern Lock iolock;
@@ -42,8 +38,7 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
    m_dram_cntlr(NULL),
    m_gmm_present(false),
    m_dram_cntlr_present(false),
-   m_enabled(false),
-   m_default_policy(NULL)
+   m_enabled(false)
 {
    // Read Parameters from the Config file
    std::map<MemComponent::component_t, CacheParameters> cache_parameters;
@@ -56,10 +51,10 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
 
    UInt32 smt_cores;
    bool dram_direct_access = false;
-   UInt32 dram_directory_total_entries = 0;
-   UInt32 dram_directory_associativity = 0;
-   UInt32 dram_directory_max_num_sharers = 0;
-   UInt32 dram_directory_max_hw_sharers = 0;
+   // UInt32 dram_directory_total_entries = 0;
+   // UInt32 dram_directory_associativity = 0;
+   // UInt32 dram_directory_max_num_sharers = 0;
+   // UInt32 dram_directory_max_hw_sharers = 0;
    String dram_directory_type_str;
    UInt32 dram_directory_home_lookup_param = 0;
    ComponentLatency dram_directory_cache_access_time(global_domain, 0);
@@ -156,10 +151,10 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
          }
 
          // Dram Directory Cache
-         dram_directory_total_entries = Sim()->getCfg()->getInt("perf_model/dram_directory/total_entries");
-         dram_directory_associativity = Sim()->getCfg()->getInt("perf_model/dram_directory/associativity");
-         dram_directory_max_num_sharers = Sim()->getConfig()->getApplicationCores();
-         dram_directory_max_hw_sharers = Sim()->getCfg()->getInt("perf_model/dram_directory/max_hw_sharers");
+         // dram_directory_total_entries = Sim()->getCfg()->getInt("perf_model/dram_directory/total_entries");
+         // dram_directory_associativity = Sim()->getCfg()->getInt("perf_model/dram_directory/associativity");
+         // dram_directory_max_num_sharers = Sim()->getConfig()->getApplicationCores();
+         // dram_directory_max_hw_sharers = Sim()->getCfg()->getInt("perf_model/dram_directory/max_hw_sharers");
          dram_directory_type_str = Sim()->getCfg()->getString("perf_model/dram_directory/directory_type");
          dram_directory_home_lookup_param = Sim()->getCfg()->getInt("perf_model/dram_directory/home_lookup_param");
          dram_directory_cache_access_time = ComponentLatency(global_domain, Sim()->getCfg()->getInt("perf_model/dram_directory/directory_cache_access_time"));
@@ -171,6 +166,7 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
       else
       {
          m_gmm_present = true;
+         m_shared_cores = Sim()->getConfig()->getApplicationCores() / Sim()->getConfig()->getGMMCores();
          m_cache_block_size = Sim()->getCfg()->getInt("perf_model/gmm/l1_icache/cache_block_size");
 
          m_last_level_cache = (MemComponent::component_t)(Sim()->getCfg()->getInt("perf_model/gmm/cache/levels") - 2 + MemComponent::L2_CACHE);
@@ -285,18 +281,7 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
 
       if (!dram_direct_access)
       {
-         m_default_policy = new DirectoryMSIPolicy(getCore()->getId(),
-               this,
-               m_dram_controller_home_lookup,
-               dram_directory_total_entries,
-               dram_directory_associativity,
-               getCacheBlockSize(),
-               dram_directory_max_num_sharers,
-               dram_directory_max_hw_sharers,
-               dram_directory_type_str,
-               dram_directory_cache_access_time,
-               getShmemPerfModel());
-         m_gmm_core = new GMMCoreFast(getCore()->getId(), this, getShmemPerfModel());
+         m_gmm_core = new GMMCoreFast(getCore()->getId(), this, m_core_list_with_dram_controllers, getShmemPerfModel());
          Sim()->getStatsManager()->logTopology("gmm-core", core->getId(), core->getId());
       }
    }
@@ -433,15 +418,6 @@ GlobalMemoryManager::~GlobalMemoryManager()
       delete m_dram_cntlr;
    if (m_gmm_core)
       delete m_gmm_core;
-
-   if (m_default_policy)
-      delete m_default_policy;
-
-   for (auto& segment: m_segment_table)
-   {
-      if (segment.m_policy)
-         delete segment.m_policy;
-   }
 }
 
 HitWhere::where_t
@@ -630,6 +606,7 @@ MYLOG("begin");
             case MemComponent::LAST_LEVEL_CACHE:
             case MemComponent::DRAM:
             case MemComponent::GMM_CORE:
+            case MemComponent::CORE:
                dynamic_cast<GMMCore *>(getCore())->handleMsgFromNetwork(sender, shmem_msg);
                break;
 
@@ -658,7 +635,20 @@ MYLOG("begin");
                break;
          }
          break;
+      case MemComponent::CORE:
+         switch(sender_mem_component)
+         {
+            case MemComponent::GMM_CORE:
+               LOG_ASSERT_ERROR(shmem_msg->getMsgType() == ShmemMsg::GMM_USER_DONE, "Core can only get message type GMM_USER_DONE");
+               getCore()->signalGMMDone();
+               break;
 
+            default:
+               LOG_PRINT_ERROR("Unrecognized sender component(%u)",
+                     sender_mem_component);
+               break;
+         }
+         break;
       default:
          LOG_PRINT_ERROR("Unrecognized receiver component(%u)",
                receiver_mem_component);
@@ -678,89 +668,6 @@ MYLOG("begin");
 MYLOG("end");
 }
 
-PolicyBase*
-GlobalMemoryManager::policyLookup(IntPtr address)
-{
-   PolicyBase *policy = m_default_policy;
-   m_segment_table_lock.acquire_read();
-   for (const auto& seg : m_segment_table)
-      if (seg.contains(address) && seg.m_policy)
-      {
-         policy = seg.m_policy;
-         break;
-      }
-
-   m_segment_table_lock.release_read();
-
-   return policy;
-}
-
-void
-GlobalMemoryManager::Command(uint64_t cmd_type, IntPtr start, uint64_t arg1)
-{
-   if (cmd_type == 0)
-      createSegment(start, arg1);
-   else if (cmd_type == 1)
-      segmentAssignPolicy(start, arg1);
-}
-
-void
-GlobalMemoryManager::createSegment(IntPtr start, uint64_t length)
-{
-   if (find(m_core_list_with_gmm.begin(), m_core_list_with_gmm.end(), getCore()->getId()) == m_core_list_with_gmm.end())
-      return;
-
-   Segment new_seg{0, start, start + length, NULL};
-   m_segment_table_lock.acquire();
-
-   for (const auto& seg : m_segment_table)
-      assert(seg != new_seg);
-
-   m_segment_table.push_back(new_seg);
-   m_segment_table_lock.release();
-
-
-   MYLOG("Created segment: %p - %p", (void *)new_seg.m_start, (void *)new_seg.m_end);
-
-}
-
-void
-GlobalMemoryManager::segmentAssignPolicy(IntPtr start, uint64_t policy_id)
-{
-   if (find(m_core_list_with_gmm.begin(), m_core_list_with_gmm.end(), getCore()->getId()) == m_core_list_with_gmm.end())
-      return;
-
-   m_segment_table_lock.acquire();
-   for (auto& seg : m_segment_table)
-   {
-      if (seg.m_start == start)
-      {
-         if (policy_id == 1)
-         {
-            seg.m_policy = new ReplicationPolicy(getCore(),
-                  this,
-                  m_dram_controller_home_lookup,
-                  1024 * 1024,
-                  getShmemPerfModel());
-         }
-         else if (policy_id == 2)
-         {
-            seg.m_policy = new SubscriptionPolicy(this);
-         }
-         else
-         {
-            if (seg.m_policy)
-               delete seg.m_policy;
-            seg.m_policy = NULL;
-         }
-
-         MYLOG("Segment assign policy: %p - %d", (void *)seg.m_start, policy_id);
-      }
-   }
-   m_segment_table_lock.release();
-}
-
-
 core_id_t
 GlobalMemoryManager::getGMMFromId(core_id_t core_id)
 {
@@ -768,6 +675,15 @@ GlobalMemoryManager::getGMMFromId(core_id_t core_id)
       return core_id;
    else
       return Sim()->getConfig()->getApplicationCores() + core_id / m_shared_cores;
+}
+
+core_id_t
+GlobalMemoryManager::getUserFromId(core_id_t core_id)
+{
+   if (core_id >= (SInt32)Sim()->getConfig()->getApplicationCores())
+      return (core_id - Sim()->getConfig()->getApplicationCores()) * m_shared_cores;
+   else
+      return core_id - core_id % m_shared_cores;
 }
 
 }

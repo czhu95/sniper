@@ -14,7 +14,7 @@
 
 template <class T_Req> class ReqQueueListTemplate
 {
-   private:
+   protected:
       std::map<IntPtr, std::queue<T_Req*>* > m_req_queue_list;
 
    public:

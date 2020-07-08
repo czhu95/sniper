@@ -20,12 +20,17 @@ class CheetahManager;
 #include "bbv_count.h"
 #include "cpuid.h"
 #include "hit_where.h"
+#include "shmem_perf.h"
+#include "semaphore.h"
 
 struct MemoryResult {
    HitWhere::where_t hit_where;
    subsecond_time_t latency;
 };
 
+namespace Sift {
+   struct GMMUserMessage;
+}
 MemoryResult makeMemoryResult(HitWhere::where_t _hit_where, SubsecondTime _latency);
 void applicationMemCopy(void *dest, const void *src, size_t n);
 
@@ -100,6 +105,8 @@ class Core
 
       void emulateCpuid(UInt32 eax, UInt32 ecx, cpuid_result_t &res) const;
 
+      MemoryResult handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now);
+
       // network accessor since network is private
       virtual int getId() const { return m_core_id; }
       Thread *getThread() const { return m_thread; }
@@ -134,6 +141,8 @@ class Core
          m_spin_elapsed_time += elapsed_time;
       }
 
+      void signalGMMDone();
+
    protected:
       core_id_t m_core_id;
       const ComponentPeriod* m_dvfs_domain;
@@ -147,6 +156,7 @@ class Core
       BbvCount m_bbv;
       TopologyInfo *m_topology_info;
       CheetahManager *m_cheetah_manager;
+      ShmemPerf m_dummy_shmem_perf;
 
       State m_core_state;
 
@@ -162,8 +172,8 @@ class Core
             IntPtr eip,
             SubsecondTime now);
 
-      void hookPeriodicInsCheck();
-      void hookPeriodicInsCall();
+      virtual void hookPeriodicInsCheck();
+      virtual void hookPeriodicInsCall();
 
       IntPtr m_icache_last_block;
 
@@ -184,6 +194,8 @@ class Core
       UInt64 m_instructions_hpi_last;
       static UInt64 g_instructions_hpi_global;
       static UInt64 g_instructions_hpi_global_callback;
+
+      Semaphore m_gmm_sem;
 };
 
 #endif

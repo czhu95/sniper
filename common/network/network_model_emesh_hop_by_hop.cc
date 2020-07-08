@@ -208,7 +208,7 @@ NetworkModelEMeshHopByHop::routePacket(const NetPacket &pkt, std::vector<Hop> &n
    {
       // Injection Port Modeling
       SubsecondTime injection_port_queue_delay = SubsecondTime::Zero();
-      if (pkt.sender - pkt.sender % m_concentration == m_core_id && !m_fake_node)
+      if (getMasterCoreId(pkt.sender) == m_core_id && !m_fake_node)
       {
          injection_port_queue_delay = computeInjectionPortQueueDelay(pkt.receiver, pkt.time, pkt_length);
          *(subsecond_time_t*)&pkt.queue_delay += injection_port_queue_delay;

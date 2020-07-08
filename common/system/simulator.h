@@ -30,6 +30,7 @@ class FaultinjectionManager;
 class TagsManager;
 class RoutineTracer;
 class MemoryTracker;
+namespace SingleLevelMemory { class SegmentTable; }
 namespace config { class Config; }
 
 class Simulator
@@ -78,6 +79,7 @@ public:
    MemoryTracker *getMemoryTracker() { return m_memory_tracker; }
    TraceManager *getGMMTraceManager() { return m_gmm_trace_manager; }
    GMMCoreManager *getGMMCoreManager() { return m_gmm_core_manager; }
+   SingleLevelMemory::SegmentTable *getSegmentTable() { return m_segment_table; }
    void setMemoryTracker(MemoryTracker *memory_tracker) { m_memory_tracker = memory_tracker; }
 
    bool isRunning() { return m_running; }
@@ -117,6 +119,7 @@ private:
    MemoryTracker *m_memory_tracker;
    TraceManager *m_gmm_trace_manager;
    GMMCoreManager *m_gmm_core_manager;
+   SingleLevelMemory::SegmentTable *m_segment_table;
 
    bool m_running;
    bool m_inst_mode_output;

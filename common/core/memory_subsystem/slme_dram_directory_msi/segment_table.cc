@@ -1,32 +1,88 @@
 #include "segment_table.h"
+#include "simulator.h"
+#include "core_manager.h"
+#include "gmm_core.h"
+
+#include "log.h"
+
+#if 0
+   extern Lock iolock;
+#  include "core_manager.h"
+#  include "simulator.h"
+#  define MYLOG(...) { ScopedLock l(iolock); fflush(stderr); fprintf(stderr, "[%s] %d%cmm %-25s@%03u: ", itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD)).c_str(), getCore()->getId(), Sim()->getCoreManager()->amiUserThread() ? '^' : '_', __FUNCTION__, __LINE__); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); fflush(stderr); }
+#else
+#  define MYLOG(...) {}
+#endif
 
 namespace SingleLevelMemory
 {
 
-SegmentTable::SegmentTable(GlobalMemoryManager *memory_manager) :
-   m_memory_manager(memory_manager)
+SegmentTable::SegmentTable()
 {
+}
+
+policy_id_t
+SegmentTable::lookup(IntPtr address)
+{
+   policy_id_t policy_id = DIRECTORY_COHERENCE;
+   m_lock.acquire_read();
+   auto it = m_table.find({0, address, address + 1});
+   if (it != m_table.end())
+   {
+      policy_id = it->second;
+   }
+   m_lock.release_read();
+
+   return policy_id;
 }
 
 void
-SegmentTable::insert(uint64_t start, uint64_t end, uint64_t paddr, dstate_t state)
+SegmentTable::command(uint64_t cmd_type, IntPtr start, uint64_t arg1)
 {
-   m_table.insert({start, end, paddr, state});
+   if (cmd_type == 0)
+      create(start, arg1);
+   else if (cmd_type == 1)
+      assign(start, arg1);
 }
 
-dstate_t
-SegmentTable::lookup(IntPtr vaddr, IntPtr &paddr)
+void
+SegmentTable::create(IntPtr start, uint64_t length)
 {
-   auto it = m_table.find({vaddr, vaddr, INVALID_ADDRESS, INVALID});
+   Segment new_seg{0, start, start + length};
+   m_lock.acquire();
+
+   LOG_ASSERT_ERROR(m_table.count(new_seg) == 0, "Segment overlapped.");
+
+   m_table[new_seg] = DIRECTORY_COHERENCE;
+   m_lock.release();
+
+   MYLOG("Created segment: %p - %p", (void *)new_seg.m_start, (void *)new_seg.m_end);
+}
+
+void
+SegmentTable::assign(IntPtr start, policy_id_t policy_id)
+{
+   m_lock.acquire();
+   auto it = m_table.find({0, start, start + 1});
    if (it != m_table.end())
    {
-      paddr = (*it).m_paddr + vaddr - (*it).m_start;
-      return (*it).m_state;
+      it->second = policy_id;
+      MYLOG("Segment assign policy: %p - %d", (void *)(*it).m_start, policy_id);
+
+      for (core_id_t core_id = (core_id_t)Sim()->getConfig()->getApplicationCores();
+           core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); core_id ++)
+      {
+         Sim()->getGMMCoreManager()->getGMMCoreFromID(core_id)->policyInit(policy_id, it->first.m_start, it->first.m_end);
+      }
    }
-   else
-   {
-      return INVALID;
-   }
+   m_lock.release();
+
+}
+
+bool
+SegmentTable::bypassCache(policy_id_t policy_id)
+{
+   return policy_id == ATOMIC_UPDATE;
 }
 
 }

@@ -11,6 +11,11 @@
 
 class CoreModel;
 
+namespace Sift {
+   struct GMMCoreMessage;
+   struct GMMUserMessage;
+}
+
 class DynamicMicroOp
 {
    private:
@@ -63,8 +68,9 @@ class DynamicMicroOp
       /** This microOp is the last microOp of the instruction. */
       bool last;
 
+      Sift::GMMUserMessage *m_user_msg;
+      Sift::GMMCoreMessage *m_core_msg;
       // architecture-specific information to be defined in derived classes
-
 
    public:
 
@@ -145,6 +151,10 @@ class DynamicMicroOp
 
       SubsecondTime getPeriod() const { LOG_ASSERT_ERROR(m_period != SubsecondTime::Zero(), "MicroOp Period is == SubsecondTime::Zero()"); return m_period; }
 
+      void attachGMMCoreMessage(Sift::GMMCoreMessage *msg);
+      void attachGMMUserMessage(Sift::GMMUserMessage *msg);
+      Sift::GMMCoreMessage *getGMMCoreMessage() const;
+      Sift::GMMUserMessage *getGMMUserMessage() const;
 
       // More dynamic, architecture-dependent information to be defined by derived classes
       virtual const char* getType() const = 0; // Make this class pure virtual

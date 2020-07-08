@@ -710,7 +710,7 @@ SubsecondTime RobSmtTimer::doDispatch()
    smtthread_id_t thread_num = thread_first;
    do
    {
-      SmtThread *smt_thread = m_threads[thread_num];
+      // SmtThread *smt_thread = m_threads[thread_num];
       RobThread *thread = m_rob_threads[thread_num];
       SubsecondTime *cpiComponent = NULL;
       SubsecondTime *cpiRobHead = findCpiComponent(thread_num);
@@ -800,6 +800,13 @@ void RobSmtTimer::issueInstruction(smtthread_id_t thread_num, uint64_t idx, Subs
 
       uop.setExecLatency(uop.getExecLatency() + latency); // execlatency already contains bypass latency
       uop.setDCacheHitWhere(res.hit_where);
+   }
+
+   if (uop.getMicroOp()->isGMMUser())
+   {
+      MemoryResult res = smt_thread->core->handleGMMUserMessage(uop.getGMMUserMessage(), now);
+      uint64_t latency = SubsecondTime::divideRounded(res.latency, now.getPeriod());
+      uop.setExecLatency(uop.getExecLatency() + latency);
    }
 
    if (uop.getMicroOp()->isLoad())

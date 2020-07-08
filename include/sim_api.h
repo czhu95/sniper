@@ -74,9 +74,6 @@
    #define MAGIC_REG_A "rax"
    #define MAGIC_REG_B "rbx"
    #define MAGIC_REG_C "rcx"
-   #define MAGIC_REG_D "rdx"
-   #define MAGIC_REG_E "rsi"
-   #define MAGIC_REG_F "rdi"
 #endif
 
 #define SimMagic0(cmd) ({                    \
@@ -118,43 +115,6 @@
    _res;                                     \
 })
 
-#define SimGMMCoreMessage(type, sender, addr, length) ({        \
-   uint64_t _cmd = SIM_CMD_GMM_CORE_MESSAGE, _arg0 = ((type << 32) | sender); \
-   uint64_t _arg1 = (addr), _arg2 = (length);\
-   __asm__ __volatile__ (                    \
-   "mov %0, %%" MAGIC_REG_A "\n"             \
-   "\tmovq %1, %%" MAGIC_REG_B "\n"          \
-   "\tmovq %2, %%" MAGIC_REG_C "\n"          \
-   "\tmovq %3, %%" MAGIC_REG_D "\n"          \
-   "\txchg %%bx, %%bx\n"                     \
-   :                       /* output    */   \
-   : "g"(_cmd),                              \
-     "g"(_arg0),                             \
-     "g"(_arg1),                             \
-     "g"(_arg2)            /* input     */   \
-   : "%" MAGIC_REG_B,                        \
-     "%" MAGIC_REG_C,                        \
-     "%" MAGIC_REG_D ); /* clobbered */      \
-})
-
-#define SimGMMCorePull(type, sender, addr, length) ({        \
-   uint64_t _cmd = SIM_CMD_GMM_CORE_PULL;    \
-   uint64_t _arg0;             \
-   __asm__ __volatile__ (                    \
-   "mov %3, %%" MAGIC_REG_A "\n"             \
-   "\txchg %%bx, %%bx\n"                     \
-   "\tmovq %%" MAGIC_REG_B ", %0\n"          \
-   "\tmovq %%" MAGIC_REG_C ", %1\n"          \
-   "\tmovq %%" MAGIC_REG_D ", %2\n"          \
-   : "=r"(_arg0),           /* output    */   \
-     "=r"(addr),                              \
-     "=r"(length)                             \
-   : "g"(_cmd)              /* input     */  \
-   : "%" MAGIC_REG_A ); /* clobbered */      \
-   type = _arg0 >> 32;                       \
-   sender = _arg0 & 0xffffffff;              \
-})
-
 #endif
 
 #define SimRoiStart()             SimMagic0(SIM_CMD_ROI_START)
@@ -173,5 +133,8 @@
 #define SimUser(cmd, arg)         SimMagic2(SIM_CMD_USER, cmd, arg)
 #define SimSetInstrumentMode(opt) SimMagic1(SIM_CMD_INSTRUMENT_MODE, opt)
 #define SimInSimulator()          (SimMagic0(SIM_CMD_IN_SIMULATOR)!=SIM_CMD_IN_SIMULATOR)
+
+#define SimGMMCoreMessage(msg, checksum)    SimMagic2(SIM_CMD_GMM_CORE_MESSAGE, (unsigned long)&msg, checksum)
+#define SimGMMCorePull(msg)                 SimMagic1(SIM_CMD_GMM_CORE_PULL, (unsigned long)&msg)
 
 #endif /* __SIM_API */

@@ -63,8 +63,9 @@ namespace Sift
       typedef void (*HandleVCPUResumeFunc)(void *arg);
       typedef void (*HandleICacheFlushFunc)(void *arg, uint64_t page_addr);
       typedef void (*HandleGMMCmdFunc)(void *arg, uintptr_t start, uint64_t msg_type, uint64_t arg1);
-      typedef void (*HandleGMMCoreMessageFunc)(void *arg, Sift::GMMCoreMessage &msg);
-      typedef void (*HandleGMMCorePullFunc)(void *arg, Sift::GMMCoreMessage &msg);
+      typedef void (*HandleGMMUserMessageFunc)(void *arg, Sift::GMMUserMessage *msg);
+      typedef void (*HandleGMMCoreMessageFunc)(void *arg, Sift::GMMCoreMessage *msg);
+      typedef void (*HandleGMMCorePullFunc)(void *arg, Sift::GMMCoreMessage *&msg);
 
       private:
          vistream *input;
@@ -97,6 +98,8 @@ namespace Sift
          void *handleICacheFlushArg;
          HandleGMMCmdFunc handleGMMCmdFunc;
          void *handleGMMCmdArg;
+         HandleGMMUserMessageFunc handleGMMUserMessageFunc;
+         void *handleGMMUserArg;
          HandleGMMCoreMessageFunc handleGMMCoreMessageFunc;
          HandleGMMCorePullFunc handleGMMCorePullFunc;
          void *handleGMMCoreArg;
@@ -131,7 +134,7 @@ namespace Sift
          const Sift::StaticInstruction* getStaticInstruction(uint64_t addr, uint8_t size);
          void sendSyscallResponse(uint64_t return_code);
          void sendEmuResponse(bool handled, EmuReply res);
-         void sendGMMCorePullResponse(GMMCoreMessage msg);
+         void sendGMMCorePullResponse(GMMCoreMessage &msg);
          void sendSimpleResponse(RecOtherType type, void *data = NULL, uint32_t size = 0);
 
 
@@ -155,6 +158,7 @@ namespace Sift
          void setHandleVCPUFunc(HandleVCPUIdleFunc funcIdle, HandleVCPUResumeFunc funcResume, void *arg = NULL) { assert(funcIdle); assert(funcResume); handleVCPUIdleFunc = funcIdle; handleVCPUResumeFunc = funcResume; handleVCPUArg = arg; }
          void setHandleICacheFlushFunc(HandleICacheFlushFunc func, void *arg = NULL) { handleICacheFlushFunc = func; handleICacheFlushArg = arg; }
          void setHandleGMMCmdFunc(HandleGMMCmdFunc func, void *arg = NULL) { handleGMMCmdFunc = func; handleGMMCmdArg = arg; }
+         void setHandleGMMUserFunc(HandleGMMUserMessageFunc func, void *arg = NULL) { handleGMMUserMessageFunc = func; handleGMMUserArg = arg; }
          void setHandleGMMCoreFunc(HandleGMMCoreMessageFunc msg_func, HandleGMMCorePullFunc pull_func, void *arg = NULL) { handleGMMCoreMessageFunc = msg_func; handleGMMCorePullFunc = pull_func, handleGMMCoreArg = arg; }
 
          uint64_t getPosition();

@@ -113,7 +113,8 @@ class TraceThread : public Runnable
       { return ((TraceThread*)arg)->handleICacheFlushFunc(page);  }
       static void __handleGMMCmdFunc(void *arg, uint64_t cmd, IntPtr start, uint64_t arg1)
       { return ((TraceThread*)arg)->handleGMMCmdFunc(cmd, start, arg1);  }
-
+      static void __handleGMMUserMessageFunc(void *arg, Sift::GMMUserMessage *msg)
+      { return ((TraceThread*)arg)->handleGMMUserMessageFunc(msg);  }
 
       Sift::Mode handleInstructionCountFunc(uint32_t icount);
       void handleCacheOnlyFunc(uint8_t icount, Sift::CacheOnlyType type, uint64_t eip, uint64_t address);
@@ -137,6 +138,7 @@ class TraceThread : public Runnable
       void addDetailedMemoryInfo(DynamicInstruction *dynins, Sift::Instruction &inst, const dl::DecodedInst &decoded_inst, uint32_t mem_idx, Operand::Direction op_type, bool is_pretetch, PerformanceModel *prfmdl);
 
       void handleGMMCmdFunc(uint64_t cmd, IntPtr start, uint64_t arg1);
+      void handleGMMUserMessageFunc(Sift::GMMUserMessage *msg);
       void unblock();
 
       SubsecondTime getCurrentTime() const;
@@ -157,7 +159,7 @@ class TraceThread : public Runnable
       virtual ~TraceThread();
 
       void spawn();
-      void stop() { m_stop = true; }
+      virtual void stop() { m_stop = true; }
       UInt64 getProgressExpect();
       UInt64 getProgressValue();
       Thread* getThread() const { return m_thread; }
@@ -169,17 +171,18 @@ class GMMTraceThread : public TraceThread
 {
    protected:
       void signalStarted() override;
-      void handleGMMCoreMessageFunc(Sift::GMMCoreMessage &msg);
-      void handleGMMCorePullFunc(Sift::GMMCoreMessage &msg);
+      void handleGMMCoreMessageFunc(Sift::GMMCoreMessage *msg);
+      void handleGMMCorePullFunc(Sift::GMMCoreMessage *&msg);
 
-      static void __handleGMMCoreMessageFunc(void *arg, Sift::GMMCoreMessage &msg)
+      static void __handleGMMCoreMessageFunc(void *arg, Sift::GMMCoreMessage *msg)
       { return ((GMMTraceThread*)arg)->handleGMMCoreMessageFunc(msg);  }
-      static void __handleGMMCorePullFunc(void *arg, Sift::GMMCoreMessage &msg)
+      static void __handleGMMCorePullFunc(void *arg, Sift::GMMCoreMessage *&msg)
       { return ((GMMTraceThread*)arg)->handleGMMCorePullFunc(msg);  }
 
    public:
       GMMTraceThread(Thread *thread, SubsecondTime time_start, String tracefile, String responsefile, app_id_t app_id, bool cleanup);
       ~GMMTraceThread() override {};
+      void stop() override;
 };
 
 

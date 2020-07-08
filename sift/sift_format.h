@@ -123,6 +123,8 @@ namespace Sift
       RecOtherVCPUResumeResponse,
       RecOtherGMMCommand,
       RecOtherGMMCommandResponse,
+      RecOtherGMMUserMessage,
+      RecOtherGMMUserMessageResponse,
       RecOtherGMMCoreMessage,
       RecOtherGMMCorePull,
       RecOtherGMMCorePullResponse,
@@ -177,38 +179,22 @@ namespace Sift
       } papi;
    } EmuReply;
 
-   typedef enum {
-      ExReq,
-      ShReq,
-      UpgradeReq,
-      InvReq,
-      FlushReq,
-      WbReq,
-            // Tag directory > cache
-      ExRep,
-      ShRep,
-      UpgradeRep,
-      InvRep,
-      FlushRep,
-      WbRep,
-      NullifyReq,
-      // Tag directory > DRAM
-      DramReadReq,
-      DramWriteReq,
-      // DRAM > tag directory
-      DramReadRep,
-
-   } GMMMsgType;
-
-   typedef struct {
-      GMMMsgType type;
+   struct GMMCoreMessage {
+      int16_t requester;
+      int16_t policy;
+      int16_t type;
       union {
          int32_t sender;
          int32_t receiver;
       };
-      uint64_t addr;
-      uint64_t length;
-   } GMMCoreMessage;
+      int16_t component;
+      uint64_t payload[2];
+   };
+
+   struct GMMUserMessage {
+      int16_t type;
+      uint64_t payload[2];
+   };
 
    typedef enum {
       ModeUnknown,

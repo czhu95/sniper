@@ -108,6 +108,7 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    {
       m_virt_cache = true;
       m_trace.setHandleGMMCmdFunc(TraceThread::__handleGMMCmdFunc, this);
+      m_trace.setHandleGMMUserFunc(TraceThread::__handleGMMUserMessageFunc, this);
    }
    thread->setVa2paFunc(_va2pa, (UInt64)this);
 
@@ -132,7 +133,7 @@ UInt64 TraceThread::va2pa(UInt64 va, bool *noMapping)
    if (m_trace_has_pa)
    {
       UInt64 pa = m_trace.va2pa(va);
-      LOG_ASSERT_WARNING(pa, "Cannot translate va: %p, thread id = %d", va, m_thread->getId());
+      // LOG_ASSERT_WARNING(pa, "Cannot translate va: %p, thread id = %d", va, m_thread->getId());
 
       if (pa == 0)
       {
@@ -274,6 +275,10 @@ uint64_t TraceThread::handleSyscallFunc(uint16_t syscall_number, const uint8_t *
          {
             ret = m_thread->getSyscallMdl()->runExit(ret);
          }
+         else
+         {
+            LOG_ASSERT_ERROR(m_thread->getCore() == NULL, "Blocking syscall should unschedule thread.");
+         }
          break;
       }
    }
@@ -322,6 +327,9 @@ void TraceThread::handleRoutineChangeFunc(Sift::RoutineOpType event, uint64_t ei
 
 bool TraceThread::handleEmuFunc(Sift::EmuType type, Sift::EmuRequest &req, Sift::EmuReply &res)
 {
+   if (!m_started)
+      signalStarted();
+
    // We may have been blocked in a system call, if we start executing instructions again that means we're continuing
    if (m_blocked)
    {
@@ -433,7 +441,10 @@ void TraceThread::handleVCPUIdleFunc()
 void TraceThread::handleVCPUResumeFunc()
 {
    if (!m_started)
+   {
       signalStarted();
+      return;
+   }
 
    SubsecondTime time_wake = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
    {
@@ -510,7 +521,8 @@ Sift::Mode TraceThread::handleInstructionCountFunc(uint32_t icount)
    Core *core = m_thread->getCore();
    LOG_ASSERT_ERROR(core, "We cannot execute instructions while not on a core");
    SubsecondTime time = core->getPerformanceModel()->getElapsedTime();
-   core->countInstructions(0, icount);
+   if (core->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores())
+      core->countInstructions(0, icount);
 
    if (Sim()->getInstrumentationMode() == InstMode::DETAILED && icount)
    {
@@ -843,13 +855,13 @@ void TraceThread::unblock()
 
    SubsecondTime end_time = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
    m_thread->getSyscallMdl()->runExit(0);
-   {
-      ScopedLock sl(Sim()->getThreadManager()->getLock());
-      // We were blocked on a system call, but started executing instructions again.
-      // This means we woke up. Since there is no explicit wakeup nor an associated time,
-      // use global time.
-      Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, end_time, NULL);
-   }
+   // {
+   //    ScopedLock sl(Sim()->getThreadManager()->getLock());
+   //    // We were blocked on a system call, but started executing instructions again.
+   //    // This means we woke up. Since there is no explicit wakeup nor an associated time,
+   //    // use global time.
+   //    Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, end_time, NULL);
+   // }
 
    if (m_thread->getCore())
    {
@@ -1036,10 +1048,21 @@ void TraceThread::handleAccessMemory(Core::lock_signal_t lock_signal, Core::mem_
 
 void TraceThread::handleGMMCmdFunc(uint64_t cmd, IntPtr start, uint64_t arg1)
 {
-   for (core_id_t core_id = Sim()->getConfig()->getApplicationCores(); core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); core_id ++)
+   if (cmd == 0 || cmd == 1)
    {
-      Sim()->getGMMCoreManager()->getCoreFromID(core_id)->getMemoryManager()->Command(cmd, start, arg1);
+      Sim()->getSegmentTable()->command(cmd, start, arg1);
    }
+   // else
+   // {
+   //    m_thread->getCore()->sendGMMUserMMessage(start, arg1, false);
+   // }
+}
+
+void TraceThread::handleGMMUserMessageFunc(Sift::GMMUserMessage *msg)
+{
+   Core *core = m_thread->getCore();
+   core->getPerformanceModel()->queuePseudoInstruction(new GMMUserMsgInstruction(msg));
+   core->getPerformanceModel()->iterate();
 }
 
 GMMTraceThread::GMMTraceThread(Thread *thread, SubsecondTime time_start, String tracefile, String responsefile, app_id_t app_id, bool cleanup)
@@ -1050,21 +1073,17 @@ GMMTraceThread::GMMTraceThread(Thread *thread, SubsecondTime time_start, String 
                                 this);
 }
 
-void GMMTraceThread::handleGMMCoreMessageFunc(Sift::GMMCoreMessage &msg)
+void GMMTraceThread::handleGMMCoreMessageFunc(Sift::GMMCoreMessage *msg)
 {
-
+   Core *core = m_thread->getCore();
+   core->getPerformanceModel()->queuePseudoInstruction(new GMMCoreMsgInstruction(msg));
+   core->getPerformanceModel()->iterate();
 }
 
-void GMMTraceThread::handleGMMCorePullFunc(Sift::GMMCoreMessage &msg)
+void GMMTraceThread::handleGMMCorePullFunc(Sift::GMMCoreMessage *&msg)
 {
    SingleLevelMemory::GMMCore *core = Sim()->getGMMCoreManager()->getGMMCoreFromID(m_thread->getId());
-   SingleLevelMemory::ShmemMsg shmem_msg((ShmemPerf *)NULL);
-
-   core->dequeueMessage(&shmem_msg);
-   msg.type = Sift::ShReq;
-   msg.sender = shmem_msg.getRequester();
-   msg.addr = shmem_msg.getAddress();
-   msg.length = shmem_msg.getDataLength();
+   msg = core->dequeueMessage();
 }
 
 void GMMTraceThread::signalStarted()
@@ -1081,4 +1100,12 @@ void GMMTraceThread::signalStarted()
       Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time, NULL);
    }
    m_started = true;
+}
+
+void GMMTraceThread::stop()
+{
+   SingleLevelMemory::GMMCore *core = Sim()->getGMMCoreManager()->getGMMCoreFromID(m_thread->getId());
+   core->signalStop();
+
+   TraceThread::stop();
 }

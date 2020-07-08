@@ -241,6 +241,9 @@ void SmtTimer::roiBegin()
 
 void SmtTimer::threadStart(HooksManager::ThreadTime *argument)
 {
+   if (argument->thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    ScopedLock sl(m_lock);
 
    smtthread_id_t smtthread_id = findSmtThreadFromThread(argument->thread_id);
@@ -253,6 +256,9 @@ void SmtTimer::threadStart(HooksManager::ThreadTime *argument)
 
 void SmtTimer::threadExit(HooksManager::ThreadTime *argument)
 {
+   if (argument->thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    ScopedLock sl(m_lock);
 
    smtthread_id_t smtthread_id = findSmtThreadFromThread(argument->thread_id);
@@ -269,6 +275,9 @@ void SmtTimer::threadExit(HooksManager::ThreadTime *argument)
 
 void SmtTimer::threadStall(HooksManager::ThreadStall *argument)
 {
+   if (argument->thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    ScopedLock sl(m_lock);
 
    smtthread_id_t smtthread_id = findSmtThreadFromThread(argument->thread_id);
@@ -285,6 +294,9 @@ void SmtTimer::threadStall(HooksManager::ThreadStall *argument)
 
 void SmtTimer::threadResume(HooksManager::ThreadResume *argument)
 {
+   if (argument->thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    ScopedLock sl(m_lock);
 
    // When a thread wakes up, it will usually call simulate() before it processes the SYNC_INSTRUCTION
@@ -308,6 +320,9 @@ void SmtTimer::threadResume(HooksManager::ThreadResume *argument)
 
 void SmtTimer::threadMigrate(HooksManager::ThreadMigrate *argument)
 {
+   if (argument->thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    ScopedLock sl(m_lock);
 
    // Same as in wakeup case: thread will send a SpawnInstruction, but we don't want to send huge latencies

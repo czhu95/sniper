@@ -19,6 +19,7 @@ def usage():
         '  [-c <sniper-options: section/key=value>]' + \
         '  [-s <script>]' + \
         '  [-q]' + \
+        '  [--gmm]' + \
         '  [--roi]' + \
         '  [--roi-script]' + \
         '  [--viz]' + \
@@ -109,6 +110,7 @@ trace_extra_args = []
 verbose = False
 use_pa = True
 qemu_system = False
+num_gmm = 0
 
 
 if not sys.argv[1:]:
@@ -226,6 +228,7 @@ try:
       "pid=",
       "isa=",
       "frontend=",
+      "gmm=",
     ] + record_trace_passthrough
   )
 except getopt.GetoptError, e:
@@ -260,6 +263,8 @@ for o, a in opts:
     if not a.startswith('-'):
       a = '--'+a
     sniperoptions.append(pipes.quote(a))
+  if o == '--gmm':
+    num_gmm = int(a)
   if o == '--roi':
     roi_only = True
   if o == '--roi-script':
@@ -538,9 +543,9 @@ if qemu_system:
   tracegen = {}
   tracegen['enabled'] = 'true'
   tracegen['emulate_syscalls'] = 'true'
-  tracegen['num_apps'] = 1
+  tracegen['num_apps'] = num_gmm
   tracegen['redirect'] = False
-  sniperoptions.append('-g --traceinput/stop_with_first_app=false') # Only stop once all processes have completed
+  sniperoptions.append('-g --traceinput/stop_with_first_app=false -g --general/gmm_cores=%(num_gmm)u' % locals()) # Only stop once all processes have completed
   # Set trace recorder options
   other_options = []
   if roi_only:
@@ -553,8 +558,8 @@ if qemu_system:
     else:
       print >> sys.stderr, '[SNIPER] Warning: Unable to use physical addresses for shared memory simulation.'
   applications = [
-    ([], other_options + ['-e', '1', '-s', '0', '-r', '1', '--follow', '--routine-tracing', '--', './gmm_test'])
-  ]
+    ([], other_options + ['-e', '1', '-s', '0', '-r', '1', '--follow', '--routine-tracing', '--', './policy_code/gmm_bin'])
+  ] * num_gmm
 
 elif traces:
   sniperoptions.append('-g --traceinput/enabled=true')

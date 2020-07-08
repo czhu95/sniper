@@ -49,6 +49,7 @@ Sift::Reader::Reader(const char *filename, const char *response_filename, uint32
    , handleICacheFlushArg(NULL)
    , handleGMMCmdFunc(NULL)
    , handleGMMCmdArg(NULL)
+   , handleGMMUserMessageFunc(NULL)
    , handleGMMCoreMessageFunc(NULL)
    , handleGMMCorePullFunc(NULL)
    , handleGMMCoreArg(NULL)
@@ -595,14 +596,29 @@ bool Sift::Reader::Read(Instruction &inst)
                sendSimpleResponse(RecOtherGMMCommandResponse);
                break;
             }
+            case RecOtherGMMUserMessage:
+            {
+               #if VERBOSE > 0
+               std::cerr << "[DEBUG:" << m_id << "] Read GMMUserMessage" << std::endl;
+               #endif
+               assert(rec.Other.size == sizeof(GMMUserMessage));
+               GMMUserMessage *msg = new GMMUserMessage();
+               input->read(reinterpret_cast<char*>(msg), sizeof(GMMUserMessage));
+               if (handleGMMUserMessageFunc)
+               {
+                  handleGMMUserMessageFunc(handleGMMUserArg, msg);
+               }
+               sendSimpleResponse(RecOtherGMMUserMessageResponse);
+               break;
+            }
             case RecOtherGMMCoreMessage:
             {
                #if VERBOSE > 0
-               std::cerr << "[DEBUG:" << m_id << "] Read GMMCoreMessage" << std::endl;
+               std::cerr << "[DEBUG:" << m_id << "] Read GMMCoreMessage ";
                #endif
                assert(rec.Other.size == sizeof(GMMCoreMessage));
-               GMMCoreMessage msg;
-               input->read(reinterpret_cast<char*>(&msg), sizeof(GMMCoreMessage));
+               GMMCoreMessage *msg = new GMMCoreMessage();
+               input->read(reinterpret_cast<char*>(msg), sizeof(GMMCoreMessage));
                if (handleGMMCoreMessageFunc)
                {
                   handleGMMCoreMessageFunc(handleGMMCoreArg, msg);
@@ -612,14 +628,22 @@ bool Sift::Reader::Read(Instruction &inst)
             case RecOtherGMMCorePull:
             {
                #if VERBOSE > 0
-               std::cerr << "[DEBUG:" << m_id << "] Read GMMCoreMessage" << std::endl;
+               std::cerr << "[DEBUG:" << m_id << "] Read GMMCorePull" << std::endl;
                #endif
                assert(rec.Other.size == 0);
-               GMMCoreMessage msg;
+               GMMCoreMessage *msg;
                if (handleGMMCorePullFunc)
                {
                   handleGMMCorePullFunc(handleGMMCoreArg, msg);
-                  sendGMMCorePullResponse(msg);
+                  if (msg)
+                  {
+                     sendGMMCorePullResponse(*msg);
+                     delete msg;
+                  }
+                  else
+                  {
+                     sendSimpleResponse(RecOtherEndResponse);
+                  }
                }
                break;
             }
@@ -902,7 +926,7 @@ void Sift::Reader::sendEmuResponse(bool handled, EmuReply res)
    response->flush();
 }
 
-void Sift::Reader::sendGMMCorePullResponse(GMMCoreMessage msg)
+void Sift::Reader::sendGMMCorePullResponse(GMMCoreMessage &msg)
 {
    #if VERBOSE > 0
    std::cerr << "[DEBUG:" << m_id << "] Write sendGMMCorePullResponse" << std::endl;

@@ -23,6 +23,9 @@ namespace SingleLevelMemory
             FLUSH_REQ,
             WB_REQ,
             SUB_REQ,
+            CORE_REQ,
+            RP_REQ,
+            ATOMIC_UPDATE_REQ,
             // Tag directory > cache
             EX_REP,
             SH_REP,
@@ -31,14 +34,26 @@ namespace SingleLevelMemory
             FLUSH_REP,
             WB_REP,
             SUB_REP,
+            CORE_REP,
             NULLIFY_REQ,
+            RP_REP,
             // Tag directory > DRAM
             DRAM_READ_REQ,
             DRAM_WRITE_REQ,
             // DRAM > tag directory
             DRAM_READ_REP,
+            // GMM > TLB
+            TLB_INSERT,
+            // GMM > GMM
+            ATOMIC_UPDATE_MSG,
+            ATOMIC_UPDATE_REP,
+            ATOMIC_UPDATE_DONE,
 
-            MAX_MSG_TYPE = NULLIFY_REQ,
+            POLICY_INIT,
+
+            GMM_USER_DONE,
+
+            MAX_MSG_TYPE = GMM_USER_DONE,
             NUM_MSG_TYPES = MAX_MSG_TYPE - MIN_MSG_TYPE + 1
          };
 

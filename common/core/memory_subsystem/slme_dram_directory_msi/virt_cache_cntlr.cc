@@ -12,6 +12,7 @@
 #include "thread.h"
 #include "../pr_l1_pr_l2_dram_directory_msi/shmem_msg.h"
 #include "subscription_policy.h"
+#include "segment_table.h"
 
 #include <cstring>
 
@@ -340,9 +341,9 @@ MYLOG("%c%c %lx+%u..+%u", mem_op_type == Core::WRITE ? 'W' : 'R', mem_op_type ==
 LOG_ASSERT_ERROR((ca_address & (getCacheBlockSize() - 1)) == 0, "address at cache line + %x", ca_address & (getCacheBlockSize() - 1));
 LOG_ASSERT_ERROR(offset + data_length <= getCacheBlockSize(), "access until %u > %u", offset + data_length, getCacheBlockSize());
 
-   if (dynamic_cast<GlobalMemoryManager *>(Sim()->getCoreManager()->getCoreFromID(0)->getMemoryManager())->policyLookup(ca_address)->getId() == 2)
+   if (Sim()->getSegmentTable()->lookup(ca_address) == SUBSCRIPTION && mem_op_type == Core::WRITE)
    {
-      // LOG_PRINT_WARNING("Subsription policy handles %lx", ca_address);
+      LOG_PRINT_WARNING("Subsription policy handles %lx", ca_address);
       hit_where = (HitWhere::where_t)m_mem_component;
       return hit_where;
    }
@@ -2043,6 +2044,14 @@ MYLOG("processInvReqFromGMM l%d", m_mem_component);
       // Update Shared Mem perf counters for access to L2 Cache
       getMemoryManager()->incrElapsedTime(m_mem_component, CachePerfModel::ACCESS_CACHE_TAGS, ShmemPerfModel::_SIM_THREAD);
 MYLOG("invalid @ %lx, hoping eviction message is underway", address);
+      getMemoryManager()->sendMsg(ShmemMsg::INV_REP,
+            MemComponent::LAST_LEVEL_CACHE, MemComponent::GMM_CORE,
+            shmem_msg->getRequester() /* requester */,
+            sender /* receiver */,
+            address,
+            shmem_msg->getPhysAddress(),
+            NULL, 0,
+            HitWhere::UNKNOWN, shmem_msg->getPerf(), ShmemPerfModel::_SIM_THREAD);
    }
 }
 

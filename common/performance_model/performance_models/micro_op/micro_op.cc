@@ -119,6 +119,15 @@ void MicroOp::makeDynamic(const String& instructionOpcodeName, uint32_t execLate
    this->setTypes();
 }
 
+void MicroOp::makeGMMCore()
+{
+   this->uop_type = UOP_GMM_CORE;
+}
+
+void MicroOp::makeGMMUser()
+{
+   this->uop_type = UOP_GMM_USER;
+}
 
 MicroOp::uop_subtype_t MicroOp::getSubtype_Exec(const MicroOp& uop)
 {   
@@ -368,6 +377,10 @@ String MicroOp::toShortString(bool withDisassembly) const
       out << " STORE ";
    else if (this->uop_type == UOP_EXECUTE)
       out << " EXEC  ";
+   else if (this->uop_type == UOP_GMM_CORE)
+      out << " GMM_CORE  ";
+   else if (this->uop_type == UOP_GMM_USER)
+      out << " GMM_USER  ";
    else
       out << " INVALID";
    out << " ("
