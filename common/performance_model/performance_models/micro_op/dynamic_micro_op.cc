@@ -1,6 +1,7 @@
 #include "dynamic_micro_op.h"
 #include "log.h"
 #include "core_model.h"
+#include "sift_format.h"
 
 DynamicMicroOp::DynamicMicroOp(const MicroOp *uop, const CoreModel *core_model, ComponentPeriod period)
    : m_uop(uop)

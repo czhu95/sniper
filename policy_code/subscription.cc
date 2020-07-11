@@ -111,7 +111,7 @@ int main()
          }
          case ATOMIC_UPDATE_REP:
          {
-            printf("[GMM Core: %d] received atomic update rep @%lx\n", node_id, msg.payload[0]);
+            // printf("[GMM Core: %d] received atomic update rep @%lx\n", node_id, msg.payload[0]);
             int i;
             for (i = 0; i < MAX_REQ; i ++)
             {

@@ -203,7 +203,7 @@ void TraceThread::signalStarted()
        Sim()->getThreadManager()->getThreadStallReason(m_thread->getId()) == ThreadManager::STALL_VCPU_HALT)
    {
       SubsecondTime time = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
-      ScopedLock sl(Sim()->getThreadManager()->getLock());
+      ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
       Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time, NULL);
    }
    m_started = true;
@@ -433,7 +433,7 @@ void TraceThread::handleVCPUIdleFunc()
    if (!m_started)
       return;
 
-   ScopedLock sl(Sim()->getThreadManager()->getLock());
+   ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
    Sim()->getThreadManager()->stallThread_async(m_thread->getId(), ThreadManager::STALL_VCPU_HALT,
                                                 m_thread->getCore()->getPerformanceModel()->getElapsedTime());
 }
@@ -448,7 +448,7 @@ void TraceThread::handleVCPUResumeFunc()
 
    SubsecondTime time_wake = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
    {
-      ScopedLock sl(Sim()->getThreadManager()->getLock());
+      ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
       Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time_wake, NULL);
    }
 
@@ -1096,7 +1096,7 @@ void GMMTraceThread::signalStarted()
        Sim()->getThreadManager()->getThreadStallReason(m_thread->getId()) == ThreadManager::STALL_VCPU_HALT)
    {
       SubsecondTime time = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
-      ScopedLock sl(Sim()->getThreadManager()->getLock());
+      ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
       Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time, NULL);
    }
    m_started = true;

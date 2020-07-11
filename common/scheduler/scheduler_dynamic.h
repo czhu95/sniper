@@ -3,6 +3,7 @@
 
 #include "scheduler.h"
 #include "hooks_manager.h"
+#include "thread_manager.h"
 
 #include <vector>
 
@@ -21,6 +22,7 @@ class SchedulerDynamic : public Scheduler
 
    protected:
       std::vector<bool> m_threads_runnable;
+      ThreadManager::thread_group_t m_group;
 
       void moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time);
 
@@ -34,6 +36,7 @@ class SchedulerDynamic : public Scheduler
       void __threadStall(thread_id_t thread_id, ThreadManager::stall_type_t reason, SubsecondTime time);
       void __threadResume(thread_id_t thread_id, thread_id_t thread_by, SubsecondTime time);
       void __threadExit(thread_id_t thread_id, SubsecondTime time);
+      bool owns(thread_id_t thread_id);
 
       // Hook stubs
       static SInt64 hook_periodic(UInt64 ptr, UInt64 time)

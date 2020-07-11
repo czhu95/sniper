@@ -167,7 +167,7 @@ ADDRINT handleMagic(THREADID threadid, CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx,
          Sift::GMMCoreMessage msg;
          PIN_SafeCopy(&msg, (void *)gbx, sizeof(Sift::GMMCoreMessage));
          // Sift::GMMCoreMessage msg{gbx >> 32, (int32_t)(gbx & 0xffffffffUL), gcx, gdx};
-         fprintf(stderr, "[%d]GMMCoreMessage: id=%d, type=%d, receiver=%d, payload[0]=%lx, payload[1]=%lx\n", app_id, msg.policy, msg.type, msg.receiver, msg.payload[0], msg.payload[1]);
+         // fprintf(stderr, "[%d]GMMCoreMessage: id=%d, type=%d, receiver=%d, payload[0]=%lx, payload[1]=%lx\n", app_id, msg.policy, msg.type, msg.receiver, msg.payload[0], msg.payload[1]);
          thread_data[threadid].output->SendGMMCoreMessage(msg);
          setInstrumentationMode(Sift::ModeDetailed);
       }
@@ -175,7 +175,7 @@ ADDRINT handleMagic(THREADID threadid, CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx,
       {
          Sift::GMMCoreMessage msg;
          thread_data[threadid].output->PullGMMCoreMessage(msg);
-         fprintf(stderr, "[%d]GMMCorePull: id=%d, type=%d, addr=%lx\n", app_id, msg.policy, msg.type, msg.payload[0]);
+         // fprintf(stderr, "[%d]GMMCorePull: id=%d, type=%d, addr=%lx\n", app_id, msg.policy, msg.type, msg.payload[0]);
          if (msg.policy != -1)
          {
             PIN_SafeCopy((void *)gbx, &msg, sizeof(Sift::GMMCoreMessage));

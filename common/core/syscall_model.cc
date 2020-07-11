@@ -78,13 +78,8 @@ bool SyscallMdl::runEnter(IntPtr syscall_number, syscall_args_t &args)
    hook_args.time = core->getPerformanceModel()->getElapsedTime();
    hook_args.syscall_number = syscall_number;
    hook_args.args = args;
-   if (m_thread->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores())
    {
-      ScopedLock sl(Sim()->getThreadManager()->getLock());
-      Sim()->getHooksManager()->callHooks(HookType::HOOK_SYSCALL_ENTER, (UInt64)&hook_args);
-   }
-   else
-   {
+      ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
       Sim()->getHooksManager()->callHooks(HookType::HOOK_SYSCALL_ENTER, (UInt64)&hook_args);
    }
 
@@ -162,18 +157,9 @@ bool SyscallMdl::runEnter(IntPtr syscall_number, syscall_args_t &args)
       case SYS_select:
       case SYS_poll:
       case SYS_wait4:
-      if (m_thread->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores())
       {
          // System call is blocking, mark thread as asleep
-         ScopedLock sl(Sim()->getThreadManager()->getLock());
-         Sim()->getThreadManager()->stallThread_async(m_thread->getId(),
-                                                      syscall_number == SYS_pause ? ThreadManager::STALL_PAUSE : ThreadManager::STALL_SYSCALL,
-                                                      m_thread->getCore()->getPerformanceModel()->getElapsedTime());
-         m_stalled = true;
-         break;
-      }
-      else
-      {
+         ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
          Sim()->getThreadManager()->stallThread_async(m_thread->getId(),
                                                       syscall_number == SYS_pause ? ThreadManager::STALL_PAUSE : ThreadManager::STALL_SYSCALL,
                                                       m_thread->getCore()->getPerformanceModel()->getElapsedTime());
@@ -183,13 +169,8 @@ bool SyscallMdl::runEnter(IntPtr syscall_number, syscall_args_t &args)
 
       case SYS_sched_yield:
       {
-         if (m_thread->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores())
          {
-            ScopedLock sl(Sim()->getThreadManager()->getLock());
-            Sim()->getThreadManager()->getScheduler()->threadYield(m_thread->getId());
-         }
-         else
-         {
+            ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
             Sim()->getThreadManager()->getScheduler()->threadYield(m_thread->getId());
          }
 
@@ -231,15 +212,8 @@ bool SyscallMdl::runEnter(IntPtr syscall_number, syscall_args_t &args)
             char *local_cpuset = new char[cpusetsize];
             core->accessMemory(Core::NONE, Core::READ, (IntPtr) cpuset, local_cpuset, cpusetsize);
 
-            if (m_thread->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores())
-            {
-               ScopedLock sl(Sim()->getThreadManager()->getLock());
-               success = Sim()->getThreadManager()->getScheduler()->threadSetAffinity(m_thread->getId(), thread->getId(), cpusetsize, (cpu_set_t *)local_cpuset);
-            }
-            else
-            {
-               success = Sim()->getThreadManager()->getScheduler()->threadSetAffinity(m_thread->getId(), thread->getId(), cpusetsize, (cpu_set_t *)local_cpuset);
-            }
+            ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
+            success = Sim()->getThreadManager()->getScheduler()->threadSetAffinity(m_thread->getId(), thread->getId(), cpusetsize, (cpu_set_t *)local_cpuset);
 
             delete [] local_cpuset;
          }
@@ -279,15 +253,8 @@ bool SyscallMdl::runEnter(IntPtr syscall_number, syscall_args_t &args)
          {
             char *local_cpuset = cpuset ? new char[cpusetsize] : 0;
 
-            if (m_thread->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores())
-            {
-               ScopedLock sl(Sim()->getThreadManager()->getLock());
-               success = Sim()->getThreadManager()->getScheduler()->threadGetAffinity(m_thread->getId(), cpusetsize, (cpu_set_t *)local_cpuset);
-            }
-            else
-            {
-               success = Sim()->getThreadManager()->getScheduler()->threadGetAffinity(m_thread->getId(), cpusetsize, (cpu_set_t *)local_cpuset);
-            }
+            ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
+            success = Sim()->getThreadManager()->getScheduler()->threadGetAffinity(m_thread->getId(), cpusetsize, (cpu_set_t *)local_cpuset);
 
             if (success && cpuset)
                core->accessMemory(Core::NONE, Core::WRITE, (IntPtr) cpuset, local_cpuset, cpusetsize);
@@ -342,14 +309,9 @@ IntPtr SyscallMdl::runExit(IntPtr old_return)
    {
       SubsecondTime time_wake = Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
 
-      if (m_thread->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores())
       {
          // System call is blocking, mark thread as awake
-         ScopedLock sl(Sim()->getThreadManager()->getLock());
-         Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time_wake, NULL);
-      }
-      else
-      {
+         ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
          Sim()->getThreadManager()->resumeThread_async(m_thread->getId(), INVALID_THREAD_ID, time_wake, NULL);
       }
 
@@ -375,14 +337,8 @@ IntPtr SyscallMdl::runExit(IntPtr old_return)
    hook_args.time = core->getPerformanceModel()->getElapsedTime();
    hook_args.ret_val = m_ret_val;
    hook_args.emulated = m_emulated;
-
-   if (m_thread->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores())
    {
-      ScopedLock sl(Sim()->getThreadManager()->getLock());
-      Sim()->getHooksManager()->callHooks(HookType::HOOK_SYSCALL_EXIT, (UInt64)&hook_args);
-   }
-   else
-   {
+      ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread->getId()));
       Sim()->getHooksManager()->callHooks(HookType::HOOK_SYSCALL_EXIT, (UInt64)&hook_args);
    }
 

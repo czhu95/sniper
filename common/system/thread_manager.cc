@@ -14,6 +14,7 @@
 #include "scheduler.h"
 #include "syscall_server.h"
 #include "circular_log.h"
+#include "scheduler_gmm.h"
 
 #include <sys/syscall.h>
 #include "os_compat.h"
@@ -92,10 +93,7 @@ Thread* ThreadManager::createThread_unlocked(app_id_t app_id, thread_id_t creato
    core_id_t core_id = m_scheduler->threadCreate(thread_id);
    if (core_id != INVALID_CORE_ID)
    {
-      Core *core = core_id < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
-                      Sim()->getCoreManager()->getCoreFromID(core_id) :
-                      Sim()->getGMMCoreManager()->getCoreFromID(core_id);
-
+      Core *core = Sim()->getCoreManager()->getCoreFromID(core_id);
       thread->setCore(core);
       core->setState(Core::INITIALIZING);
    }
@@ -428,6 +426,20 @@ void UserThreadManager::joinThread(thread_id_t thread_id, thread_id_t join_threa
 }
 
 
+SystemThreadManager::SystemThreadManager()
+   : ThreadManager()
+{
+   if (Sim()->getConfig()->getGMMCores())
+      m_gmm_scheduler = new SchedulerGMM(this);
+   else
+      m_gmm_scheduler = NULL;
+}
+
+SystemThreadManager::~SystemThreadManager()
+{
+   if (m_gmm_scheduler)
+      delete m_gmm_scheduler;
+}
 
 Thread* SystemThreadManager::createThread(app_id_t app_id, thread_id_t creator_thread_id)
 {
@@ -435,6 +447,41 @@ Thread* SystemThreadManager::createThread(app_id_t app_id, thread_id_t creator_t
    LOG_ASSERT_ERROR(creator_thread_id == INVALID_THREAD_ID, "System thread should not have valid creator_thread_id.");
    ScopedLock sl(m_thread_lock);
    return createThread_unlocked(app_id, creator_thread_id);
+}
+
+Thread* SystemThreadManager::createThread_unlocked(app_id_t app_id, thread_id_t creator_thread_id)
+{
+   thread_id_t thread_id = m_threads.size();
+   Thread *thread = new Thread(thread_id, app_id);
+   m_threads.push_back(thread);
+   m_thread_state.push_back(ThreadState());
+   m_thread_state[thread->getId()].status = Core::INITIALIZING;
+
+   core_id_t core_id;
+   if (thread_id < (thread_id_t)Sim()->getConfig()->getApplicationCores())
+   {
+      core_id = m_scheduler->threadCreate(thread_id);
+      LOG_ASSERT_ERROR(core_id == thread_id, "System thread %d on core %d.", thread_id, core_id);
+      Core *core = Sim()->getCoreManager()->getCoreFromID(core_id);
+      thread->setCore(core);
+      core->setState(Core::INITIALIZING);
+   }
+   else
+   {
+      core_id = m_gmm_scheduler->threadCreate(thread_id);
+      LOG_ASSERT_ERROR(core_id == thread_id, "GMM thread %d on core %d.", thread_id, core_id);
+      Core *core = Sim()->getGMMCoreManager()->getCoreFromID(core_id);
+      thread->setCore(core);
+      core->setState(Core::INITIALIZING);
+   }
+
+   Sim()->getStatsManager()->logEvent(StatsManager::EVENT_THREAD_CREATE, SubsecondTime::MaxTime(), core_id, thread_id, app_id, creator_thread_id, "");
+
+   HooksManager::ThreadCreate args = { thread_id: thread_id, creator_thread_id: creator_thread_id };
+   Sim()->getHooksManager()->callHooks(HookType::HOOK_THREAD_CREATE, (UInt64)&args);
+   CLOG("thread", "Create %d", thread_id);
+
+   return thread;
 }
 
 void SystemThreadManager::onThreadStart(thread_id_t thread_id, SubsecondTime time)
@@ -511,6 +558,7 @@ void SystemThreadManager::moveThread(thread_id_t thread_id, core_id_t core_id, S
 {
    Thread *thread = getThreadFromID(thread_id);
    CLOG("thread", "Move %d from %d to %d", thread_id, thread->getCore() ? thread->getCore()->getId() : -1, core_id);
+   // LOG_PRINT_WARNING("Move %d from %d to %d", thread_id, thread->getCore() ? thread->getCore()->getId() : -1, core_id);
 
    if (Core *core = thread->getCore())
       core->setState(Core::IDLE);
@@ -555,6 +603,14 @@ thread_id_t SystemThreadManager::getThreadToSpawn(SubsecondTime &time)
 void SystemThreadManager::joinThread(thread_id_t thread_id, thread_id_t join_thread_id)
 {
    SYSTEM_SIM_NOT_REACHABLE;
+}
+
+Lock& SystemThreadManager::getLock(thread_id_t thread_id)
+{
+   if (thread_id == INVALID_THREAD_ID || thread_id < (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return m_thread_lock;
+
+   return m_gmm_thread_lock;
 }
 
 

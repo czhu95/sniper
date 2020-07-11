@@ -210,7 +210,7 @@ void SchedulerPinnedBase::periodic(SubsecondTime time)
 {
    SubsecondTime delta = time - m_last_periodic;
 
-   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); ++core_id)
+   for(core_id_t core_id = 0; core_id < (core_id_t)Sim()->getConfig()->getApplicationCores(); ++core_id)
    {
       if (delta > m_quantum_left[core_id] || m_core_thread_running[core_id] == INVALID_THREAD_ID)
       {
@@ -293,6 +293,7 @@ void SchedulerPinnedBase::reschedule(SubsecondTime time, core_id_t core_id, bool
       }
    }
 
+   LOG_ASSERT_ERROR(current_thread_id == INVALID_THREAD_ID || new_thread_id == INVALID_THREAD_ID, "");
    m_quantum_left[core_id] = m_quantum;
 }
 

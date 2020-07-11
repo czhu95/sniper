@@ -343,7 +343,7 @@ LOG_ASSERT_ERROR(offset + data_length <= getCacheBlockSize(), "access until %u >
 
    if (Sim()->getSegmentTable()->lookup(ca_address) == SUBSCRIPTION && mem_op_type == Core::WRITE)
    {
-      LOG_PRINT_WARNING("Subsription policy handles %lx", ca_address);
+      // LOG_PRINT_WARNING("Subsription policy handles %lx", ca_address);
       hit_where = (HitWhere::where_t)m_mem_component;
       return hit_where;
    }

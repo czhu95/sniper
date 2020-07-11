@@ -45,9 +45,9 @@ public:
    static thread_group_t getThreadGroup(thread_id_t);
 
    ThreadManager();
-   ~ThreadManager();
+   virtual ~ThreadManager();
 
-   Lock &getLock() { return m_thread_lock; }
+   virtual Lock &getLock(thread_id_t thread_id = INVALID_THREAD_ID) { return m_thread_lock; }
    Scheduler *getScheduler() const { return m_scheduler; }
 
    virtual Thread* createThread(app_id_t app_id, thread_id_t creator_thread_id) = 0;
@@ -110,7 +110,7 @@ protected:
 
    Scheduler *m_scheduler;
 
-   Thread* createThread_unlocked(app_id_t app_id, thread_id_t creator_thread_id);
+   virtual Thread* createThread_unlocked(app_id_t app_id, thread_id_t creator_thread_id);
    void wakeUpWaiter(thread_id_t thread_id, SubsecondTime time);
 };
 
@@ -136,6 +136,9 @@ protected:
 class SystemThreadManager: public ThreadManager
 {
 public:
+   SystemThreadManager();
+   ~SystemThreadManager() override;
+
    Thread* createThread(app_id_t app_id, thread_id_t creator_thread_id) override;
 
    thread_id_t spawnThread(thread_id_t thread_id, app_id_t app_id) override;
@@ -147,10 +150,17 @@ public:
    void onThreadExit(thread_id_t thread_id) override;
 
    void moveThread(thread_id_t thread_id, core_id_t core_id, SubsecondTime time) override;
-};
 
-class GMMThreadManager : public SystemThreadManager
-{
+   Lock &getLock(thread_id_t thread_id) override;
+
+   Scheduler *getGMMScheduler() const { return m_gmm_scheduler; }
+
+protected:
+
+   Lock m_gmm_thread_lock;
+   Scheduler *m_gmm_scheduler;
+
+   Thread* createThread_unlocked(app_id_t app_id, thread_id_t creator_thread_id) override;
 };
 
 #endif // THREAD_MANAGER_H

@@ -452,17 +452,19 @@ GMMCore::dequeueMessage()
       if (m_msg_queue.empty())
       {
          {
-            // ScopedLock sl(Sim()->getThreadManager()->getLock());
+            ScopedLock sl(Sim()->getThreadManager()->getLock(m_core_id));
             Sim()->getThreadManager()->stallThread_async(m_core_id, ThreadManager::STALL_GMM_PULL,
                                                          getPerformanceModel()->getElapsedTime());
-            getPerformanceModel()->queuePseudoInstruction(new UnknownInstruction(getDvfsDomain()->getPeriod()));
-            getPerformanceModel()->iterate();
          }
+         LOG_ASSERT_ERROR(m_thread == NULL, "GMM thread not stalled on GMM Core.");
+         getPerformanceModel()->queuePseudoInstruction(new UnknownInstruction(getDvfsDomain()->getPeriod()));
+         getPerformanceModel()->iterate();
+
          m_msg_cond.wait(m_msg_queue_lock);
 
          SubsecondTime time_wake = getPerformanceModel()->getElapsedTime(); //Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
          {
-            // ScopedLock sl(Sim()->getThreadManager()->getLock());
+            ScopedLock sl(Sim()->getThreadManager()->getLock(m_core_id));
             Sim()->getThreadManager()->resumeThread_async(m_core_id, INVALID_THREAD_ID, time_wake, NULL);
          }
          LOG_ASSERT_ERROR(m_thread && m_thread->getCore(), "GMM thread not resumed on GMM Core.");
@@ -483,7 +485,7 @@ GMMCore::dequeueMessage()
       msg_time = msg_time > now ? msg_time : now;
       getPerformanceModel()->queuePseudoInstruction(new SyncInstruction(msg_time, SyncInstruction::SYSCALL));
 
-      LOG_PRINT_WARNING("[%d]dequeue time: %s, addr=%lx, type=%d", m_core_id, itostr(msg_time).c_str(), msg->payload[0], msg->type);
+      // LOG_PRINT_WARNING("[%d]dequeue time: %s, addr=%lx, type=%d", m_core_id, itostr(msg_time).c_str(), msg->payload[0], msg->type);
       break;
       // if (executeSoftwarePolicy(msg))
       //    break;
@@ -678,7 +680,7 @@ void
 GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
 {
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, now);
-   LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d", m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(), msg->type);
+   // LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d", m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(), msg->type);
    switch (msg->type)
    {
       case ShmemMsg::ATOMIC_UPDATE_REP:
@@ -697,7 +699,7 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
                HitWhere::UNKNOWN,
                &m_dummy_shmem_perf,
                ShmemPerfModel::_USER_THREAD);
-         LOG_PRINT_WARNING("Forwarding msg (type=%d) to node %d", msg->type, msg->receiver);
+         // LOG_PRINT_WARNING("Forwarding msg (type=%d) to node %d", msg->type, msg->receiver);
          break;
       case ShmemMsg::ATOMIC_UPDATE_MSG:
          for (core_id_t dest_core_id = (core_id_t)Sim()->getConfig()->getApplicationCores();
@@ -717,7 +719,7 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
                   &m_dummy_shmem_perf,
                   ShmemPerfModel::_USER_THREAD);
 
-            LOG_PRINT_WARNING("ATOMIC_UPDATE_MSG %d>%d", m_core_id, dest_core_id);
+            // LOG_PRINT_WARNING("ATOMIC_UPDATE_MSG %d>%d", m_core_id, dest_core_id);
          }
          break;
       // case TLB_INSERT:

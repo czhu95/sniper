@@ -58,7 +58,7 @@ bool Thread::reschedule(SubsecondTime &time, Core *current_core)
    {
       // While we're not scheduled on a core, wait.
       // Keep time updated with the time when we return.
-      ScopedLock sl(Sim()->getThreadManager()->getLock());
+      ScopedLock sl(Sim()->getThreadManager()->getLock(m_thread_id));
 
       // Do a definitive check for m_core, while holding the lock, unoptimized because another thread will be changing it
       while((volatile Core*)m_core == NULL)

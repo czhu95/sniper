@@ -202,7 +202,7 @@ Core::hookPeriodicInsCall()
 {
    // Take the Thread lock, to make sure no other core calls us at the same time
    // and that the hook callback is also serialized w.r.t. other global events
-   ScopedLock sl(Sim()->getThreadManager()->getLock());
+   ScopedLock sl(Sim()->getThreadManager()->getLock(m_core_id));
 
    // Definitive, locked checked if we should do the HOOK_PERIODIC_INS callback
    if (g_instructions_hpi_global > g_instructions_hpi_global_callback)
@@ -635,6 +635,6 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
 void
 Core::signalGMMDone()
 {
-   LOG_PRINT_WARNING("Signaling %d", m_core_id);
+   // LOG_PRINT_WARNING("Signaling %d", m_core_id);
    m_gmm_sem.signal();
 }

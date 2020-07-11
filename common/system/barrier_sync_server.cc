@@ -60,9 +60,7 @@ BarrierSyncServer::synchronize(core_id_t core_id, SubsecondTime time)
       return;
 
    ScopedLock sl(Sim()->getThreadManager()->getLock());
-   Core *core = core_id < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
-                   Sim()->getCoreManager()->getCoreFromID(core_id) :
-                   Sim()->getGMMCoreManager()->getCoreFromID(core_id);
+   Core *core = Sim()->getCoreManager()->getCoreFromID(core_id);
 
    core_id_t master_core_id;
    if (m_fastforward)
@@ -113,6 +111,9 @@ BarrierSyncServer::synchronize(core_id_t core_id, SubsecondTime time)
 void
 BarrierSyncServer::threadExit(HooksManager::ThreadTime *argument)
 {
+   if (argument->thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    // Release thread from the barrier
    releaseThread(argument->thread_id);
    // Check to see if we were waiting for this thread
@@ -122,6 +123,9 @@ BarrierSyncServer::threadExit(HooksManager::ThreadTime *argument)
 void
 BarrierSyncServer::threadStall(HooksManager::ThreadStall *argument)
 {
+   if (argument->thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    // Release thread from the barrier
    releaseThread(argument->thread_id);
    // Check to see if we were waiting for this thread
@@ -131,6 +135,9 @@ BarrierSyncServer::threadStall(HooksManager::ThreadStall *argument)
 void
 BarrierSyncServer::threadMigrate(HooksManager::ThreadMigrate *argument)
 {
+   if (argument->thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    // Update the migrating thread's time so we'll be sure to release it
    releaseThread(argument->thread_id);
    // Migration due to thread stall/exit will generate another event later, we'll do a signal() then
@@ -140,6 +147,9 @@ BarrierSyncServer::threadMigrate(HooksManager::ThreadMigrate *argument)
 void
 BarrierSyncServer::releaseThread(thread_id_t thread_id)
 {
+   if (thread_id >= (thread_id_t)Sim()->getConfig()->getApplicationCores())
+      return;
+
    for(core_id_t core_id = 0; core_id < (core_id_t) Sim()->getConfig()->getApplicationCores(); core_id++)
    {
       if (m_barrier_acquire_list[core_id] && m_core_thread[core_id] == thread_id)
