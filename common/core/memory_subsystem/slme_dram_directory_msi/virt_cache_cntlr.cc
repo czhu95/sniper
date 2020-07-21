@@ -21,10 +21,10 @@
 //#define PRIVATE_L2_OPTIMIZATION
 
 extern Lock iolock;
-#if 0
+#if 1
 #  define LOCKED(...) { ScopedLock sl(iolock); fflush(stdout); __VA_ARGS__; fflush(stdout); }
-#  define LOGID() fprintf(stdout, "[%s] %2u%c [ %2d(%2d)-L%u%c ] %-25s@%3u: ", \
-                     itostr(getShmemPerfModel()->getElapsedTime(Sim()->getCoreManager()->amiUserThread() ? ShmemPerfModel::_USER_THREAD : ShmemPerfModel::_SIM_THREAD)).c_str(), Sim()->getCoreManager()->getCurrentCoreID(), \
+#  define LOGID() fprintf(stdout, "[%s] %c [ %2d(%2d)-L%u%c ] %-25s@%3u: ", \
+                     itostr(getShmemPerfModel()->getElapsedTime(Sim()->getCoreManager()->amiUserThread() ? ShmemPerfModel::_USER_THREAD : ShmemPerfModel::_SIM_THREAD)).c_str(), \
                      Sim()->getCoreManager()->amiUserThread() ? '^' : '_', \
                      m_core_id_master, m_core_id, m_mem_component < MemComponent::L2_CACHE ? 1 : m_mem_component - MemComponent::L2_CACHE + 2, \
                      m_mem_component == MemComponent::L1_ICACHE ? 'I' : (m_mem_component == MemComponent::L1_DCACHE  ? 'D' : ' '),  \
@@ -1559,7 +1559,7 @@ MYLOG("evict FLUSH %lx", evict_address);
                   evict_buf, getCacheBlockSize(),
                   HitWhere::UNKNOWN, &m_dummy_shmem_perf, thread_num);
          }
-         else
+         else if (Sim()->getSegmentTable()->lookup(evict_address) != SUBSCRIPTION)
          {
 MYLOG("evict INV %lx", evict_address);
             LOG_ASSERT_ERROR(evict_block_info.getCState() == CacheState::SHARED || evict_block_info.getCState() == CacheState::EXCLUSIVE,

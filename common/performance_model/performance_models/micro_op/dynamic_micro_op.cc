@@ -148,7 +148,7 @@ bool DynamicMicroOp::isLongLatencyLoad() const
 
 void DynamicMicroOp::attachGMMCoreMessage(Sift::GMMCoreMessage *msg)
 {
-   LOG_ASSERT_ERROR(getMicroOp()->isGMMCore(), "Expected a gmm core instruction.");
+   LOG_ASSERT_ERROR(getMicroOp()->isGMMCoreMsg(), "Expected a gmm core instruction.");
    LOG_ASSERT_ERROR(m_core_msg == NULL, "Already has core message attached.");
    m_core_msg = msg;
 }

@@ -14,6 +14,7 @@
 #include <set>
 
 class AddressHomeLookup;
+class QueueModel;
 
 namespace Sift
 {
@@ -65,6 +66,7 @@ namespace SingleLevelMemory
          void enqueueMessage(Sift::GMMCoreMessage *core_msg);
          Sift::GMMCoreMessage *dequeueMessage();
 
+         void handleGMMCorePull(SubsecondTime now);
          void handleGMMCoreMessage(Sift::GMMCoreMessage *msg, SubsecondTime now);
 
          void signalStop();
@@ -83,6 +85,12 @@ namespace SingleLevelMemory
          std::set<TLBEntry> m_tlb;
 
          ReqQueueList* m_dram_queue_list;
+
+         QueueModel* m_queue_model;
+         SubsecondTime m_dequeue_time;
+         std::deque<SubsecondTime> m_dequeued_msg_time;
+         SubsecondTime m_msg_time;
+         int m_num_pending_core_msg;
 
          GlobalMemoryManager* getGlobalMemoryManager() { return m_global_memory_manager; }
 

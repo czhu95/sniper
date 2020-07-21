@@ -52,8 +52,9 @@ namespace SingleLevelMemory
             POLICY_INIT,
 
             GMM_USER_DONE,
+            GMM_CORE_DONE,
 
-            MAX_MSG_TYPE = GMM_USER_DONE,
+            MAX_MSG_TYPE = GMM_CORE_DONE,
             NUM_MSG_TYPES = MAX_MSG_TYPE - MIN_MSG_TYPE + 1
          };
 

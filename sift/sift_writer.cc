@@ -1396,9 +1396,9 @@ void Sift::Writer::GMMCommand(uint64_t cmd_type, uintptr_t segment, uint64_t arg
 
 void Sift::Writer::SendGMMUserMessage(Sift::GMMUserMessage &msg)
 {
-   #if VERBOSE > 1
+   // #if VERBOSE > 1
    std::cerr << "[DEBUG:" << m_id << "] Write GMMUserMessage" << std::endl;
-   #endif
+   // #endif
 
    if (!output)
    {

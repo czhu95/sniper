@@ -609,6 +609,7 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
 {
    SubsecondTime initial_time = now;
    SubsecondTime final_time = now;
+   LOG_PRINT_WARNING("GMMUserMessage addr=%lx, initial=%s", msg->payload[0], itostr(initial_time).c_str());
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, now);
    SingleLevelMemory::GlobalMemoryManager *mm = dynamic_cast<SingleLevelMemory::GlobalMemoryManager *>(getMemoryManager());
    LOG_ASSERT_ERROR(mm, "Cannot convert MemoryManager to GlobalMemoryManager");
@@ -625,10 +626,12 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
    if (msg->type == SingleLevelMemory::ShmemMsg::ATOMIC_UPDATE_REQ)
    {
       m_gmm_sem.wait();
-      final_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD);
+      final_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
    }
 
    SubsecondTime shmem_time = final_time - initial_time;
+   LOG_PRINT_WARNING("GMMUserMessage addr=%lx, delay=%s, final=%s", msg->payload[0], itostr(shmem_time).c_str(), itostr(final_time).c_str());
+   assert(shmem_time < SubsecondTime::US());
    return makeMemoryResult(HitWhere::UNKNOWN, shmem_time);
 }
 
@@ -636,5 +639,7 @@ void
 Core::signalGMMDone()
 {
    // LOG_PRINT_WARNING("Signaling %d", m_core_id);
+   SubsecondTime t_here = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD);
+   getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, t_here);
    m_gmm_sem.signal();
 }

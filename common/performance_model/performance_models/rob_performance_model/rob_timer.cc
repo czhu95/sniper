@@ -633,7 +633,14 @@ void RobTimer::issueInstruction(uint64_t idx, SubsecondTime &next_event)
                        entry->uop->getSequenceNumber(), entry->addressReady.getPS(), entry->ready.getPS());
    }
 
-   if (uop.getMicroOp()->isGMMCore())
+   if (uop.getMicroOp()->isGMMCorePull())
+   {
+       SingleLevelMemory::GMMCore *gmm_core = dynamic_cast<SingleLevelMemory::GMMCore *>(m_core);
+       LOG_ASSERT_ERROR(gmm_core, "GMM MicroOp can only be executed on GMM Core.");
+       gmm_core->handleGMMCorePull(now);
+   }
+
+   if (uop.getMicroOp()->isGMMCoreMsg())
    {
        SingleLevelMemory::GMMCore *gmm_core = dynamic_cast<SingleLevelMemory::GMMCore *>(m_core);
        LOG_ASSERT_ERROR(gmm_core, "GMM MicroOp can only be executed on GMM Core.");

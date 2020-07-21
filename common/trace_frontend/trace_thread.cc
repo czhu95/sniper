@@ -791,6 +791,18 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
       }
    }
 
+   if (dec_inst.is_atomic() && Sim()->getSimMode() == Simulator::SYSTEM)
+   {
+      assert(inst.num_addresses);
+      UInt64 mem_address = inst.addresses[0];
+      if (Sim()->getSegmentTable()->lookup(mem_address))
+      {
+         LOG_PRINT_WARNING("GMMUserMessage: type=10, addr=%lx", mem_address);
+         Sift::GMMUserMessage *msg = new Sift::GMMUserMessage{10, mem_address, 0};
+         handleGMMUserMessageFunc(msg);
+      }
+   }
+
    // Push instruction
 
    prfmdl->queueInstruction(dynins);
@@ -1084,6 +1096,8 @@ void GMMTraceThread::handleGMMCorePullFunc(Sift::GMMCoreMessage *&msg)
 {
    SingleLevelMemory::GMMCore *core = Sim()->getGMMCoreManager()->getGMMCoreFromID(m_thread->getId());
    msg = core->dequeueMessage();
+   core->getPerformanceModel()->queuePseudoInstruction(new GMMCorePullInstruction());
+   core->getPerformanceModel()->iterate();
 }
 
 void GMMTraceThread::signalStarted()

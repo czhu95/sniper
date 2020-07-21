@@ -19,7 +19,8 @@
 MicroOp* MicroOpPerformanceModel::m_serialize_uop = NULL;
 MicroOp* MicroOpPerformanceModel::m_mfence_uop = NULL;
 MicroOp* MicroOpPerformanceModel::m_memaccess_uop = NULL;
-MicroOp* MicroOpPerformanceModel::m_gmmcore_uop = NULL;
+MicroOp* MicroOpPerformanceModel::m_gmmcorepull_uop = NULL;
+MicroOp* MicroOpPerformanceModel::m_gmmcoremsg_uop = NULL;
 MicroOp* MicroOpPerformanceModel::m_gmmuser_uop = NULL;
 
 MicroOpPerformanceModel::MicroOpPerformanceModel(Core *core, bool issue_memops)
@@ -96,10 +97,15 @@ MicroOpPerformanceModel::MicroOpPerformanceModel(Core *core, bool issue_memops)
 
    if (core->getId() >= (core_id_t)Sim()->getConfig()->getApplicationCores())
    {
-      m_gmmcore_uop = new MicroOp();
-      m_gmmcore_uop->makeGMMCore();
-      m_gmmcore_uop->setFirst(true);
-      m_gmmcore_uop->setLast(true);
+      m_gmmcorepull_uop = new MicroOp();
+      m_gmmcorepull_uop->makeGMMCorePull();
+      m_gmmcorepull_uop->setFirst(true);
+      m_gmmcorepull_uop->setLast(true);
+
+      m_gmmcoremsg_uop = new MicroOp();
+      m_gmmcoremsg_uop->makeGMMCoreMsg();
+      m_gmmcoremsg_uop->setFirst(true);
+      m_gmmcoremsg_uop->setLast(true);
    }
    else
    {
@@ -572,10 +578,25 @@ void MicroOpPerformanceModel::handleInstruction(DynamicInstruction *dynins)
       fprintf(m_dyninsn_log, "[%llu](MA) %s: cost = %llu\n", (long long unsigned int) m_elapsed_time, dynins->instruction->getTypeName().c_str(), (long long unsigned int) insn_cost);
 #endif
    }
+   else if (dynins->instruction->getType() == INST_GMM_CORE_PULL)
+   {
+      std::vector<DynamicMicroOp*> uops;
+      DynamicMicroOp* uop = m_core_model->createDynamicMicroOp(m_allocator, m_gmmcorepull_uop, insn_period);
+
+      GMMCorePullInstruction const* gmm_core_pull_insn = dynamic_cast<GMMCorePullInstruction const*>(dynins->instruction);
+      LOG_ASSERT_ERROR(gmm_core_pull_insn, "Expected a GMMCorePullInstruction, but did not get one.");
+      uops.push_back(uop);
+
+      uint64_t new_latency_cycles;
+      boost::tie(new_num_insns, new_latency_cycles) = simulate(uops);
+      new_latency.addCycleLatency(new_latency_cycles);
+      // SingleLevelMemory::GMMCore * gmm_core = dynamic_cast<SingleLevelMemory::GMMCore *>(getCore());
+      // LOG_ASSERT_ERROR(gmm_core, "GMMCoreMsgInstruction can only run on GMM core.");
+   }
    else if (dynins->instruction->getType() == INST_GMM_CORE_MSG)
    {
       std::vector<DynamicMicroOp*> uops;
-      DynamicMicroOp* uop = m_core_model->createDynamicMicroOp(m_allocator, m_gmmcore_uop, insn_period);
+      DynamicMicroOp* uop = m_core_model->createDynamicMicroOp(m_allocator, m_gmmcoremsg_uop, insn_period);
 
       GMMCoreMsgInstruction const* gmm_core_msg_insn = dynamic_cast<GMMCoreMsgInstruction const*>(dynins->instruction);
       LOG_ASSERT_ERROR(gmm_core_msg_insn, "Expected a GMMCoreMsgInstruction, but did not get one.");

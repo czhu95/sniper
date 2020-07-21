@@ -36,6 +36,7 @@ update_req reqs[MAX_REQ];
 int main()
 {
    GMMCoreMessage msg;
+   uint64_t checksum;
    for (int i = 0; i < MAX_REQ; i ++) {
       reqs[i].addr = INVALID_ADDR;
    }
@@ -58,6 +59,10 @@ int main()
             block_map = new bool[length / block_size + 1];
             for (int i = 0; i < length / block_size + 1; i ++)
                block_map[i] = false;
+
+            msg.type = GMM_CORE_DONE;
+            checksum = CHECKSUM(msg);
+            SimGMMCoreMessage(msg, checksum);
             break;
          case SH_REQ:
          {
@@ -76,7 +81,7 @@ int main()
                msg.receiver = node_id;
                msg.payload[0] = MAX(addr & block_mask, start);
                msg.payload[1] = MIN((addr & block_mask) + block_size, end);
-               uint64_t checksum = CHECKSUM(msg);
+               checksum = CHECKSUM(msg);
                // printf("[GMM Core] Send GMM message type = %d, start = %lx, end = %lx\n", 
                //        msg.type, msg.payload[0], msg.payload[1]);
                SimGMMCoreMessage(msg, checksum);
@@ -99,14 +104,14 @@ int main()
             assert(i != MAX_REQ);
             msg.type = ATOMIC_UPDATE_MSG;
             msg.component = GMM_CORE;
-            uint64_t checksum0 = CHECKSUM(msg);
-            SimGMMCoreMessage(msg, checksum0);
+            checksum = CHECKSUM(msg);
+            SimGMMCoreMessage(msg, checksum);
 
             msg.type = INV_REQ;
             msg.component = LAST_LEVEL_CACHE;
             msg.receiver = node_id;
-            uint64_t checksum1 = CHECKSUM(msg);
-            SimGMMCoreMessage(msg, checksum1);
+            checksum = CHECKSUM(msg);
+            SimGMMCoreMessage(msg, checksum);
             break;
          }
          case ATOMIC_UPDATE_REP:
@@ -124,14 +129,25 @@ int main()
                      msg.type = GMM_USER_DONE;
                      msg.component = CORE;
                      msg.receiver = msg.requester;
-                     uint64_t checksum = CHECKSUM(msg);
+                     checksum = CHECKSUM(msg);
                      SimGMMCoreMessage(msg, checksum);
                      reqs[i].addr = INVALID_ADDR;
+                  }
+                  else
+                  {
+                     msg.type = GMM_CORE_DONE;
+                     checksum = CHECKSUM(msg);
+                     SimGMMCoreMessage(msg, checksum);
                   }
                   break;
                }
             }
-            // assert(i != MAX_REQ);
+            if (i == MAX_REQ)
+            {
+               msg.type = GMM_CORE_DONE;
+               checksum = CHECKSUM(msg);
+               SimGMMCoreMessage(msg, checksum);
+            }
                // fprintf(stdout, "[GMM Core: %d] addr = %lx, cannot find request.\n", node_id, msg.payload[0]);
             break;
          }
@@ -140,7 +156,7 @@ int main()
             msg.type = INV_REQ;
             msg.component = LAST_LEVEL_CACHE;
             msg.receiver = node_id;
-            uint64_t checksum = CHECKSUM(msg);
+            checksum = CHECKSUM(msg);
             SimGMMCoreMessage(msg, checksum);
             break;
          }
@@ -149,7 +165,7 @@ int main()
             msg.type = ATOMIC_UPDATE_REP;
             msg.component = GMM_CORE;
             msg.receiver = home_node;
-            uint64_t checksum = CHECKSUM(msg);
+            checksum = CHECKSUM(msg);
             SimGMMCoreMessage(msg, checksum);
             break;
          }
@@ -163,6 +179,9 @@ int main()
          //    break;
          // }
          default:
+            msg.type = GMM_CORE_DONE;
+            checksum = CHECKSUM(msg);
+            SimGMMCoreMessage(msg, checksum);
             break;
       }
 

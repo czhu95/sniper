@@ -23,12 +23,13 @@
 #include "sift_format.h"
 #include "instruction.h"
 #include "thread.h"
+#include "queue_model_history_list.h"
 
 #if 0
    extern Lock iolock;
 #  include "core_manager.h"
 #  include "simulator.h"
-#  define MYLOG(...) { ScopedLock l(iolock); fflush(stdout); printf("[%s] %d%cdd %-25s@%3u: ", itostr(getShmemPerfModel()->getElapsedTime()).c_str(), getMemoryManager()->getCore()->getId(), Sim()->getCoreManager()->amiUserThread() ? '^' : '_', __FUNCTION__, __LINE__); printf(__VA_ARGS__); printf("\n"); fflush(stdout); }
+#  define MYLOG(...) { ScopedLock l(iolock); fflush(stdout); printf("[%s] %d%cdd %-25s@%3u: ", itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD)).c_str(), getMemoryManager()->getCore()->getId(), Sim()->getCoreManager()->amiUserThread() ? '^' : '_', __FUNCTION__, __LINE__); printf(__VA_ARGS__); printf("\n"); fflush(stdout); }
 #else
 #  define MYLOG(...) {}
 #endif
@@ -97,12 +98,15 @@ GMMCore::GMMCore(SInt32 id)
                m_shmem_perf_model);
 
    m_dram_queue_list = new ReqQueueList();
+
+   m_queue_model = QueueModel::create("GMM Core", m_core_id, "history_list", *global_domain);
 }
 
 GMMCore::~GMMCore()
 {
    delete m_dram_controller_home_lookup;
    delete m_dram_queue_list;
+   delete m_queue_model;
 }
 
 void
@@ -110,7 +114,7 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
 
-   // MYLOG("begin for address %lx, %d in queue", address, m_dram_directory_req_queue_list->size(address));
+   // MYLOG("begin for address %lx, %d in queue", address, m_dram_queue_list->size(address));
    updateShmemPerf(shmem_msg, ShmemPerf::TD_ACCESS);
 
    // Look up line in segment table
@@ -192,7 +196,7 @@ GMMCore::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
    IntPtr pa = shmem_msg->getPhysAddress();
    core_id_t requester = shmem_msg->getRequester();
 
-   MYLOG("begin for address %lx, pa %lx, %d in queue, requester is %u", va, pa, m_dram_directory_req_queue_list->size(va), requester);
+   MYLOG("begin for address %lx, pa %lx, %d in queue, requester is %u", va, pa, m_dram_queue_list->size(va), requester);
 
    assert(pa != INVALID_ADDRESS);
    // if (pa == INVALID_ADDRESS)
@@ -210,9 +214,9 @@ GMMCore::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
       //    // Add request onto a queue
       //    ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
 
-      //    m_dram_directory_req_queue_list->enqueue(va, shmem_req);
+      //    m_dram_queue_list->enqueue(va, shmem_req);
       //    MYLOG("ENqueued E REQ for address %lx", va );
-      //    if (m_dram_directory_req_queue_list->size(va) == 1)
+      //    if (m_dram_queue_list->size(va) == 1)
       //    {
       //       processExReqFromL2Cache(shmem_req);
       //    }
@@ -266,10 +270,10 @@ GMMCore::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
 
       //    // Add request onto a queue
       //    ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
-      //    m_dram_directory_req_queue_list->enqueue(va, shmem_req);
+      //    m_dram_queue_list->enqueue(va, shmem_req);
       //    MYLOG("ENqueued  UPGRADE REQ for address %lx",  va );
 
-      //    if (m_dram_directory_req_queue_list->size(va) == 1)
+      //    if (m_dram_queue_list->size(va) == 1)
       //    {
       //       processUpgradeReqFromL2Cache(shmem_req);
       //    }
@@ -327,7 +331,7 @@ GMMCore::handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
 void
 GMMCore::processNextReqFromL2Cache(IntPtr address)
 {
-   MYLOG("Start processNextReqFromL2Cache(%lx): %d in Queue", address, m_dram_directory_req_queue_list->size(address) );
+   MYLOG("Start processNextReqFromL2Cache(%lx): %d in Queue", address, m_dram_queue_list->size(address) );
 
    MYLOG("about to dequeue request for address %lx", address );
    assert(m_dram_queue_list->size(address) >= 1);
@@ -477,15 +481,18 @@ GMMCore::dequeueMessage()
       }
 
       msg = m_msg_queue.front().first;
-      SubsecondTime msg_time = m_msg_queue.front().second;
+      m_dequeued_msg_time.push_back(m_msg_queue.front().second);
       m_msg_queue.pop_front();
+      // if (m_dequeue_time == SubsecondTime::Zero())
+      // {
+      //    m_dequeue_time = m_next_msg_time;
+      //    getPerformanceModel()->queuePseudoInstruction(new SyncInstruction(m_dequeue_time, SyncInstruction::SYSCALL));
+      // }
+      // m_dequeue_time = m_msg_time > m_dequeue_time ? m_msg_time : m_dequeue_time;
 
       // getShmemPerfModel()->updateElapsedTime(msg_time, ShmemPerfModel::_USER_THREAD);
-      SubsecondTime now = getPerformanceModel()->getElapsedTime();
-      msg_time = msg_time > now ? msg_time : now;
-      getPerformanceModel()->queuePseudoInstruction(new SyncInstruction(msg_time, SyncInstruction::SYSCALL));
 
-      // LOG_PRINT_WARNING("[%d]dequeue time: %s, addr=%lx, type=%d", m_core_id, itostr(msg_time).c_str(), msg->payload[0], msg->type);
+      // LOG_PRINT_WARNING("[%d]dequeue time: %s, addr=%lx, type=%d", m_core_id, itostr(m_dequeue_time).c_str(), msg->payload[0], msg->type);
       break;
       // if (executeSoftwarePolicy(msg))
       //    break;
@@ -595,7 +602,7 @@ GMMCore::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    //   Which HitWhere to report?
    HitWhere::where_t hit_where = shmem_msg->getWhere();
    if (hit_where == HitWhere::DRAM)
-      hit_where = (sender == shmem_msg->getRequester()) ? HitWhere::DRAM_LOCAL : HitWhere::DRAM_REMOTE;
+      hit_where = (getGlobalMemoryManager()->getUserFromId(sender) == shmem_msg->getRequester()) ? HitWhere::DRAM_LOCAL : HitWhere::DRAM_REMOTE;
 
    // if (hit_where == HitWhere::DRAM_REMOTE)
    // {
@@ -677,10 +684,30 @@ GMMCore::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
 }
 
 void
+GMMCore::handleGMMCorePull(SubsecondTime now)
+{
+   assert(!m_dequeued_msg_time.empty());
+   m_msg_time = m_dequeued_msg_time.front();
+   m_dequeued_msg_time.pop_front();
+   m_dequeue_time = now;
+   LOG_PRINT_WARNING("[%d]dequeue time: %s", m_core_id, itostr(m_msg_time).c_str());
+}
+
+void
 GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
 {
-   getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, now);
-   // LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d", m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(), msg->type);
+   assert(now >= m_dequeue_time);
+   SubsecondTime process_time = now - m_dequeue_time;
+   SubsecondTime queue_delay = m_queue_model->computeQueueDelay(m_msg_time, process_time);
+   if (queue_delay > SubsecondTime::NS(100))
+      LOG_PRINT_WARNING("Queue delay too long.");
+   getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, m_msg_time + process_time + queue_delay);
+
+   m_msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
+   LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d, addr=%lx, process=%s, queue_delay=%s",
+                     m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(),
+                     msg->type, msg->payload[0], itostr(process_time).c_str(), itostr(queue_delay).c_str());
+
    switch (msg->type)
    {
       case ShmemMsg::ATOMIC_UPDATE_REP:
@@ -721,6 +748,8 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
 
             // LOG_PRINT_WARNING("ATOMIC_UPDATE_MSG %d>%d", m_core_id, dest_core_id);
          }
+         break;
+      case ShmemMsg::GMM_CORE_DONE:
          break;
       // case TLB_INSERT:
       //    getGlobalMemoryManager()->sendMsg(ShmemMsg::TLB_INSERT,
