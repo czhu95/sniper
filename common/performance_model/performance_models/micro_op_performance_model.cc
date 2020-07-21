@@ -95,7 +95,7 @@ MicroOpPerformanceModel::MicroOpPerformanceModel(Core *core, bool issue_memops)
       m_memaccess_uop->setLast(true);
    }
 
-   if (core->getId() >= (core_id_t)Sim()->getConfig()->getApplicationCores())
+   if (core->getId() == (core_id_t)Sim()->getConfig()->getApplicationCores())
    {
       m_gmmcorepull_uop = new MicroOp();
       m_gmmcorepull_uop->makeGMMCorePull();

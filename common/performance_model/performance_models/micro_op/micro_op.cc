@@ -122,16 +122,34 @@ void MicroOp::makeDynamic(const String& instructionOpcodeName, uint32_t execLate
 void MicroOp::makeGMMCorePull()
 {
    this->uop_type = UOP_GMM_CORE_PULL;
+   this->memoryAccessSize = 0;
+   this->microOpTypeOffset = 0;
+   this->intraInstructionDependencies = 0;
+   this->branch = false;
+   this->instructionOpcode = dl::Decoder::DL_OPCODE_INVALID;
+   this->setTypes();
 }
 
 void MicroOp::makeGMMCoreMsg()
 {
    this->uop_type = UOP_GMM_CORE_MSG;
+   this->memoryAccessSize = 0;
+   this->microOpTypeOffset = 0;
+   this->intraInstructionDependencies = 0;
+   this->branch = false;
+   this->instructionOpcode = dl::Decoder::DL_OPCODE_INVALID;
+   this->setTypes();
 }
 
 void MicroOp::makeGMMUser()
 {
    this->uop_type = UOP_GMM_USER;
+   this->memoryAccessSize = 0;
+   this->microOpTypeOffset = 0;
+   this->intraInstructionDependencies = 0;
+   this->branch = false;
+   this->instructionOpcode = dl::Decoder::DL_OPCODE_INVALID;
+   this->setTypes();
 }
 
 MicroOp::uop_subtype_t MicroOp::getSubtype_Exec(const MicroOp& uop)
