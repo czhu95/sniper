@@ -14,6 +14,8 @@
 #  define MYLOG(...) {}
 #endif
 
+const uint64_t node_offset = 8;
+
 namespace SingleLevelMemory
 {
 
@@ -83,6 +85,23 @@ bool
 SegmentTable::bypassCache(policy_id_t policy_id)
 {
    return policy_id == ATOMIC_UPDATE;
+}
+
+core_id_t
+SegmentTable::get_home(IntPtr vaddr)
+{
+   core_id_t gmm_core_id;
+   policy_id_t policy_id = lookup(vaddr);
+   switch (policy_id)
+   {
+      case SUBSCRIPTION:
+         gmm_core_id = (vaddr >> node_offset) & (Sim()->getConfig()->getGMMCores() - 1);
+         break;
+      default:
+         LOG_PRINT_ERROR("Unrecognized policy");
+   }
+
+   return Sim()->getConfig()->getApplicationCores() + gmm_core_id;
 }
 
 }

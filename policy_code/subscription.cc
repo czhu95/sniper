@@ -17,7 +17,8 @@ const uint64_t block_logsize = 20;
 const uint64_t block_size = 1UL << block_logsize;
 const uint64_t block_mask = ~(block_size - 1);
 const uint64_t num_nodes = 2;
-const uint64_t home_node = 8;
+const uint64_t app_cores = 8;
+const uint64_t node_offset = 8;
 
 bool *block_map; // [length / block_size + 1];
 int node_id = -1;
@@ -164,7 +165,7 @@ int main()
          {
             msg.type = ATOMIC_UPDATE_REP;
             msg.component = GMM_CORE;
-            msg.receiver = home_node;
+            msg.receiver = app_cores + ((msg.payload[0] >> node_offset) & (num_nodes - 1));
             checksum = CHECKSUM(msg);
             SimGMMCoreMessage(msg, checksum);
             break;

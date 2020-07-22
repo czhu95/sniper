@@ -17,6 +17,7 @@
 #include "topology_info.h"
 #include "cheetah_manager.h"
 #include "sift_format.h"
+#include "segment_table.h"
 
 #include "global_memory_manager.h"
 
@@ -613,7 +614,7 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, now);
    SingleLevelMemory::GlobalMemoryManager *mm = dynamic_cast<SingleLevelMemory::GlobalMemoryManager *>(getMemoryManager());
    LOG_ASSERT_ERROR(mm, "Cannot convert MemoryManager to GlobalMemoryManager");
-   core_id_t gmm_core_id = Sim()->getConfig()->getApplicationCores(); //mm->getGMMFromId(m_core_id);
+   core_id_t gmm_core_id = Sim()->getSegmentTable()->get_home(msg->payload[0]); // mm->getGMMFromId(msg->payload[0] & (Sim()->getConfig()->getGMMCores() - 1));
    mm->sendMsg(static_cast<SingleLevelMemory::ShmemMsg::msg_t>(msg->type),
          MemComponent::CORE, MemComponent::GMM_CORE,
          m_core_id,

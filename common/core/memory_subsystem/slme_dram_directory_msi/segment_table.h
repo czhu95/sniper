@@ -93,6 +93,7 @@ namespace SingleLevelMemory
          void command(uint64_t cmd_type, IntPtr start, uint64_t arg1);
          void create(IntPtr start, uint64_t length);
          void assign(IntPtr start, policy_id_t policy_id);
+         core_id_t get_home(IntPtr vaddr);
 
          static bool bypassCache(policy_id_t policy_id);
    };

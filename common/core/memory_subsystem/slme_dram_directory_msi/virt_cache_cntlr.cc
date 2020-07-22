@@ -21,7 +21,7 @@
 //#define PRIVATE_L2_OPTIMIZATION
 
 extern Lock iolock;
-#if 1
+#if 0
 #  define LOCKED(...) { ScopedLock sl(iolock); fflush(stdout); __VA_ARGS__; fflush(stdout); }
 #  define LOGID() fprintf(stdout, "[%s] %c [ %2d(%2d)-L%u%c ] %-25s@%3u: ", \
                      itostr(getShmemPerfModel()->getElapsedTime(Sim()->getCoreManager()->amiUserThread() ? ShmemPerfModel::_USER_THREAD : ShmemPerfModel::_SIM_THREAD)).c_str(), \

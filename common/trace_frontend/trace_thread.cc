@@ -928,10 +928,11 @@ void TraceThread::run()
          unblock();
       }
 
-      if (m_stop)
+      core = m_thread->getCore();
+
+      if (m_stop || !core)
          break;
 
-      core = m_thread->getCore();
       prfmdl = core->getPerformanceModel();
 
       bool do_icache_warmup = false;
