@@ -125,6 +125,12 @@ Core::Core(SInt32 id, int dummy __attribute__((unused)))
    , m_instructions_hpi_callback(0)
    , m_instructions_hpi_last(0)
 {
+   registerStatsMetric("core", id, "instructions", &m_instructions);
+   registerStatsMetric("core", id, "spin_loops", &m_spin_loops);
+   registerStatsMetric("core", id, "spin_instructions", &m_spin_instructions);
+   registerStatsMetric("core", id, "spin_elapsed_time", &m_spin_elapsed_time);
+
+   Sim()->getStatsManager()->logTopology("hwcontext", id, id);
 }
 
 Core::~Core()

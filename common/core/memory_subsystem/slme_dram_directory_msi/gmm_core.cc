@@ -455,6 +455,7 @@ GMMCore::dequeueMessage()
    {
       if (m_msg_queue.empty())
       {
+         m_msg_queue_lock.release();
          {
             ScopedLock sl(Sim()->getThreadManager()->getLock(m_core_id));
             Sim()->getThreadManager()->stallThread_async(m_core_id, ThreadManager::STALL_GMM_PULL,
@@ -464,7 +465,9 @@ GMMCore::dequeueMessage()
          getPerformanceModel()->queuePseudoInstruction(new UnknownInstruction(getDvfsDomain()->getPeriod()));
          getPerformanceModel()->iterate();
 
-         m_msg_cond.wait(m_msg_queue_lock);
+         m_msg_queue_lock.acquire();
+         if (m_msg_queue.empty())
+            m_msg_cond.wait(m_msg_queue_lock);
 
          SubsecondTime time_wake = getPerformanceModel()->getElapsedTime(); //Sim()->getClockSkewMinimizationServer()->getGlobalTime(true /*upper_bound*/);
          {
@@ -690,7 +693,7 @@ GMMCore::handleGMMCorePull(SubsecondTime now)
    m_msg_time = m_dequeued_msg_time.front();
    m_dequeued_msg_time.pop_front();
    m_dequeue_time = now;
-   LOG_PRINT_WARNING("[%d]dequeue time: %s", m_core_id, itostr(m_msg_time).c_str());
+   // LOG_PRINT_WARNING("[%d]dequeue time: %s", m_core_id, itostr(m_msg_time).c_str());
 }
 
 void
@@ -699,14 +702,14 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
    assert(now >= m_dequeue_time);
    SubsecondTime process_time = now - m_dequeue_time;
    SubsecondTime queue_delay = m_queue_model->computeQueueDelay(m_msg_time, process_time);
-   if (queue_delay > SubsecondTime::NS(100))
-      LOG_PRINT_WARNING("Queue delay too long.");
+   // if (queue_delay > SubsecondTime::NS(100))
+   //    LOG_PRINT_WARNING("Queue delay too long.");
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, m_msg_time + process_time + queue_delay);
 
    m_msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
-   LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d, addr=%lx, process=%s, queue_delay=%s",
-                     m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(),
-                     msg->type, msg->payload[0], itostr(process_time).c_str(), itostr(queue_delay).c_str());
+   // LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d, addr=%lx, process=%s, queue_delay=%s",
+   //                   m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(),
+   //                   msg->type, msg->payload[0], itostr(process_time).c_str(), itostr(queue_delay).c_str());
 
    switch (msg->type)
    {

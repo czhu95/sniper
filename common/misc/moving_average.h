@@ -115,6 +115,8 @@ class MovingArithmeticMean : public MovingAverage<T>
       T compute() const
       {
          UInt32 curr_window_size = (this->m_curr_window_back - this->m_curr_window_front).getValue(); // recompute
+         if (curr_window_size == 0)
+            return SubsecondTime::Zero();
          return sum / curr_window_size;
       }
 };
@@ -135,6 +137,9 @@ class MovingGeometricMean : public MovingAverage<T>
       T compute() const
       {
          UInt32 curr_window_size = (this->m_curr_window_back - this->m_curr_window_front).getValue();
+         if (curr_window_size == 0)
+            return SubsecondTime::Zero();
+
          T geometric_mean = SubsecondTime::Zero();
          geometric_mean.setInternalDataForced(1);
 
