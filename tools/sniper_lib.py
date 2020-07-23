@@ -48,7 +48,7 @@ def get_results(jobid = None, resultsdir = None, config = None, stats = None, pa
     config = get_config(resultsdir = resultsdir)
   elif stats:
     config = config or stats.config
-    results = stats.parse_stats(partial or ('roi-begin', 'roi-end'), int(config['general/total_cores']), metrics = metrics)
+    results = stats.parse_stats(partial or ('roi-begin', 'roi-end'), int(config['general/total_cores']) + int(config['general/gmm_cores']), metrics = metrics)
   else:
     raise ValueError('Need either jobid or resultsdir')
 
@@ -76,7 +76,7 @@ def get_name(jobid = None, resultsdir = None):
 
 
 def stats_process(config, results):
-  ncores = int(config['general/total_cores'])
+  ncores = int(config['general/total_cores']) + int(config['general/gmm_cores'])
   stats = {}
   for key, core, value in results:
      if core == -1:
@@ -150,7 +150,7 @@ def parse_results_from_dir(resultsdir, partial = None, metrics = None):
   if not os.path.exists(simcfg):
     raise SniperResultsException("No valid configuration found")
   simcfg = sniper_config.parse_config(open(simcfg).read())
-  ncores = int(simcfg['general/total_cores'])
+  ncores = int(simcfg['general/total_cores']) + int(simcfg['general/gmm_cores'])
 
   results += [ ('ncores', -1, ncores) ]
   results += [ ('corefreq', idx, 1e9 * float(sniper_config.get_config(simcfg, 'perf_model/core/frequency', idx))) for idx in range(ncores) ]

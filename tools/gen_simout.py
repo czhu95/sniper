@@ -14,7 +14,7 @@ def generate_simout(jobid = None, resultsdir = None, partial = None, output = sy
 
   results = res['results']
   config = res['config']
-  ncores = int(config['general/total_cores'])
+  ncores = int(config['general/total_cores']) + int(config['general/gmm_cores'])
 
   format_int = lambda v: str(long(v))
   format_pct = lambda v: '%.1f%%' % (100. * v)
