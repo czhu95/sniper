@@ -206,18 +206,18 @@ NetworkModelEMeshHopByHop::routePacket(const NetPacket &pkt, std::vector<Hop> &n
    }
    else
    {
+      // A Unicast packet
+      OutputDirection direction;
+      core_id_t next_dest = getNextDest(pkt.receiver, direction);
+
       // Injection Port Modeling
       SubsecondTime injection_port_queue_delay = SubsecondTime::Zero();
-      if (getMasterCoreId(pkt.sender) == m_core_id && !m_fake_node)
+      if (getMasterCoreId(pkt.sender) == m_core_id && !m_fake_node && next_dest != DESTINATION)
       {
          injection_port_queue_delay = computeInjectionPortQueueDelay(pkt.receiver, pkt.time, pkt_length);
          *(subsecond_time_t*)&pkt.queue_delay += injection_port_queue_delay;
       }
       SubsecondTime curr_time = pkt.time + injection_port_queue_delay;
-
-      // A Unicast packet
-      OutputDirection direction;
-      core_id_t next_dest = getNextDest(pkt.receiver, direction);
 
       addHop(direction, pkt.receiver, next_dest, curr_time, pkt_length, nextHops, requester,
              (subsecond_time_t*)&pkt.queue_delay);
@@ -249,7 +249,7 @@ NetworkModelEMeshHopByHop::processReceivedPacket(NetPacket& pkt)
    SubsecondTime contention_delay = packet_latency - (computeDistance(pkt.sender, m_core_id) * m_hop_latency.getLatency());
    // LOG_ASSERT_ERROR(pkt.type != SLME_MAGIC || contention_delay == SubsecondTime::Zero(), "SLME packet error");
 
-   if (pkt.sender != m_core_id && !m_fake_node)
+   if (getMasterCoreId(pkt.sender) != getMasterCoreId(m_core_id) && !m_fake_node)
    {
       SubsecondTime processing_time = computeProcessingTime(pkt_length);
       SubsecondTime ejection_port_queue_delay = computeEjectionPortQueueDelay(pkt.time, pkt_length);

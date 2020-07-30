@@ -35,7 +35,7 @@ core_id_t SchedulerPinnedBase::findFreeCoreForThread(thread_id_t thread_id)
 core_id_t SchedulerPinnedBase::threadCreate(thread_id_t thread_id)
 {
    if (m_thread_info.size() <= (size_t)thread_id)
-      m_thread_info.resize(m_thread_info.size() + 16);
+      m_thread_info.resize(thread_id + 16);
 
    if (m_thread_info[thread_id].hasAffinity())
    {
