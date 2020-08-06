@@ -692,7 +692,8 @@ GMMCore::handleGMMCorePull(SubsecondTime now)
    assert(!m_dequeued_msg_time.empty());
    m_msg_time = m_dequeued_msg_time.front();
    m_dequeued_msg_time.pop_front();
-   m_dequeue_time = now;
+   if (m_msg_time > now)
+      m_dequeue_time = now;
    // LOG_PRINT_WARNING("[%d]dequeue time: %s", m_core_id, itostr(m_msg_time).c_str());
 }
 

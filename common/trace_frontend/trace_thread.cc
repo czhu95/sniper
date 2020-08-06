@@ -1081,6 +1081,7 @@ void TraceThread::handleGMMUserMessageFunc(Sift::GMMUserMessage *msg)
 GMMTraceThread::GMMTraceThread(Thread *thread, SubsecondTime time_start, String tracefile, String responsefile, app_id_t app_id, bool cleanup)
    : TraceThread(thread, time_start, tracefile, responsefile, app_id, cleanup)
 {
+   m_appid_from_coreid = true;
    m_trace.setHandleGMMCoreFunc(GMMTraceThread::__handleGMMCoreMessageFunc,
                                 GMMTraceThread::__handleGMMCorePullFunc,
                                 this);

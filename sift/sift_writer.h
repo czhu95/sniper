@@ -58,7 +58,7 @@ namespace Sift
          Writer(const char *filename, GetCodeFunc getCodeFunc, bool useCompression = false, const char *response_filename = "", uint32_t id = 0, bool arch32 = false, bool requires_icache_per_insn = false, TranslationType send_va2pa_mapping = NO_TRANS, GetCodeFunc2 getCodeFunc2 = NULL, void *GetCodeFunc2Data = NULL);
          Writer(const char *filename, GetCodeFunc getCodeFunc, bool useCompression = false, const char *response_filename = "", uint32_t id = 0, bool arch32 = false, bool requires_icache_per_insn = false, bool send_va2pa_mapping = false, GetCodeFunc2 getCodeFunc2 = NULL, void *GetCodeFunc2Data = NULL)
             : Writer(filename, getCodeFunc, useCompression, response_filename, id, arch32, requires_icache_per_insn,
-                     send_va2pa_mapping ? PAGEMAP : EXPLICIT, getCodeFunc2, GetCodeFunc2Data) {}
+                     send_va2pa_mapping ? PAGEMAP : NO_TRANS, getCodeFunc2, GetCodeFunc2Data) {}
 
          ~Writer();
          void End();
