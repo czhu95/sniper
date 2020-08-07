@@ -70,6 +70,7 @@ namespace Sift
          void InstructionMem(uint64_t addr);
          void InstructionBranch(bool taken);
          void InstructionEnd();
+         void InstructionAbort();
          Mode InstructionCount(uint32_t icount);
          void CacheOnly(uint8_t icount, CacheOnlyType type, uint64_t eip, uint64_t address);
          void Output(uint8_t fd, const char *data, uint32_t size);

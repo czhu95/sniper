@@ -511,6 +511,21 @@ void Sift::Writer::InstructionEnd()
    inst_began = false;
 }
 
+void Sift::Writer::InstructionAbort()
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write InstructionAbort" << std::endl;
+   #endif
+
+   if (!output)
+   {
+      return;
+   }
+
+   m_addresses.clear();
+   inst_began = false;
+}
+
 
 Sift::Mode Sift::Writer::InstructionCount(uint32_t icount)
 {
