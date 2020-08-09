@@ -804,7 +804,7 @@ DirectoryMSIPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    //   Which HitWhere to report?
    HitWhere::where_t hit_where = shmem_msg->getWhere();
    if (hit_where == HitWhere::DRAM)
-      hit_where = (sender == shmem_msg->getRequester()) ? HitWhere::DRAM_LOCAL : HitWhere::DRAM_REMOTE;
+      hit_where = (getMemoryManager()->getUserFromId(sender) == shmem_msg->getRequester()) ? HitWhere::DRAM_LOCAL : HitWhere::DRAM_REMOTE;
 
    // if (hit_where == HitWhere::DRAM_REMOTE)
    // {

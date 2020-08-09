@@ -212,8 +212,9 @@ NetworkModelEMeshHopByHop::routePacket(const NetPacket &pkt, std::vector<Hop> &n
 
       // Injection Port Modeling
       SubsecondTime injection_port_queue_delay = SubsecondTime::Zero();
-      if (getMasterCoreId(pkt.sender) == m_core_id && !m_fake_node && next_dest != DESTINATION)
+      if (getMasterCoreId(pkt.sender) == m_core_id && !m_fake_node && direction != DESTINATION)
       {
+         // LOG_PRINT_WARNING("Inject %d(%d) -> %d(%d), direction=%d", pkt.sender, getMasterCoreId(pkt.sender), pkt.receiver, getMasterCoreId(pkt.receiver), direction);
          injection_port_queue_delay = computeInjectionPortQueueDelay(pkt.receiver, pkt.time, pkt_length);
          *(subsecond_time_t*)&pkt.queue_delay += injection_port_queue_delay;
       }
