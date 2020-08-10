@@ -57,6 +57,7 @@ class TraceThread : public Runnable
       bool m_trace_has_pa;
       bool m_address_randomization;
       bool m_appid_from_coreid;
+      bool m_appid_from_threadid;
       uint8_t m_address_randomization_table[256];
       bool m_stop;
       std::unordered_map<IntPtr, Instruction *> m_icache;

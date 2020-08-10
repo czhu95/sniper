@@ -45,6 +45,7 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    , m_trace_has_pa(false)
    , m_address_randomization(Sim()->getCfg()->getBool("traceinput/address_randomization"))
    , m_appid_from_coreid(Sim()->getCfg()->getString("scheduler/type") == "sequential" ? true : false)
+   , m_appid_from_threadid(false)
    , m_stop(false)
    , m_bbv_base(0)
    , m_bbv_count(0)
@@ -155,6 +156,10 @@ UInt64 TraceThread::va2pa(UInt64 va, bool *noMapping)
    if (m_appid_from_coreid)
    {
         haddr = UInt64(m_thread->getCore()->getId());
+   }
+   else if (m_appid_from_threadid)
+   {
+        haddr = UInt64(m_thread->getId());
    }
    else
    {
@@ -795,7 +800,16 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
    {
       assert(inst.num_addresses);
       UInt64 mem_address = inst.addresses[0];
-      if (Sim()->getSegmentTable()->lookup(mem_address))
+      static UInt64 atomic_eip = 0UL;
+      if (Sim()->getSegmentTable()->lookup(mem_address) == ATOMIC_SWAP)
+      {
+         if (atomic_eip != inst.sinst->addr)
+         {
+            LOG_PRINT_WARNING("Atomic inst on %lx, @%lx", mem_address, inst.sinst->addr);
+            atomic_eip = inst.sinst->addr;
+         }
+      }
+      if (Sim()->getSegmentTable()->lookup(mem_address) == SUBSCRIPTION)
       {
          LOG_PRINT_WARNING("GMMUserMessage: type=10, addr=%lx", mem_address);
          Sift::GMMUserMessage *msg = new Sift::GMMUserMessage{10, mem_address, 0};
@@ -1073,6 +1087,7 @@ void TraceThread::handleGMMCmdFunc(uint64_t cmd, IntPtr start, uint64_t arg1)
 
 void TraceThread::handleGMMUserMessageFunc(Sift::GMMUserMessage *msg)
 {
+   // LOG_PRINT_WARNING("Queued GMMUserMessage id=%d, 0x%lx, 0x%lx", msg->type, msg->payload[0], msg->payload[1]);
    Core *core = m_thread->getCore();
    core->getPerformanceModel()->queuePseudoInstruction(new GMMUserMsgInstruction(msg));
    core->getPerformanceModel()->iterate();
@@ -1081,7 +1096,7 @@ void TraceThread::handleGMMUserMessageFunc(Sift::GMMUserMessage *msg)
 GMMTraceThread::GMMTraceThread(Thread *thread, SubsecondTime time_start, String tracefile, String responsefile, app_id_t app_id, bool cleanup)
    : TraceThread(thread, time_start, tracefile, responsefile, app_id, cleanup)
 {
-   m_appid_from_coreid = true;
+   m_appid_from_threadid = true;
    m_trace.setHandleGMMCoreFunc(GMMTraceThread::__handleGMMCoreMessageFunc,
                                 GMMTraceThread::__handleGMMCorePullFunc,
                                 this);
