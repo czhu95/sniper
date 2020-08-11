@@ -102,6 +102,7 @@ namespace SingleLevelMemory
          case INV_REP:
          case DRAM_READ_REQ:
          case GMM_USER_DONE:
+         case USER_CACHE_READ_REQ:
             // msg_type + address
             // msg_type - 1 byte
             return (1 + sizeof(IntPtr));
@@ -120,6 +121,9 @@ namespace SingleLevelMemory
          case ATOMIC_UPDATE_DONE:
             // msg_type + address + cache_block
             return (1 + sizeof(IntPtr) + m_data_length);
+
+         case USER_CACHE_READ_REP:
+            return (1 + sizeof(IntPtr) * 2);
 
          default:
             LOG_PRINT_ERROR("Unrecognized Msg Type(%u)", m_msg_type);

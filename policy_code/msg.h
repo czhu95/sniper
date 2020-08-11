@@ -1,3 +1,6 @@
+#ifndef MSG_H_
+#define MSG_H_
+
 enum msg_t
 {
    INVALID_MSG_TYPE = 0,
@@ -35,6 +38,11 @@ enum msg_t
    ATOMIC_UPDATE_MSG,
    ATOMIC_UPDATE_REP,
    ATOMIC_UPDATE_DONE,
+
+   USER_CACHE_READ_REQ,
+   USER_CACHE_WRITE_REQ,
+   USER_CACHE_READ_REP,
+   USER_CACHE_WRITE_REP,
 
    POLICY_INIT,
 
@@ -75,16 +83,16 @@ struct GMMCoreMessage {
    int16_t requester;
    int16_t policy;
    int16_t type;
-   union {
-      int32_t sender;
-      int32_t receiver;
-   };
    int16_t component;
+   int32_t sender;
+   int32_t receiver;
    uint64_t payload[2];
 };
 
-#define CHECKSUM(msg)       \
-({                                           \
-   uint64_t *regs = (uint64_t *)&msg;       \
-   regs[0] ^ regs[1] ^ regs[2];             \
-})
+// #define CHECKSUM(msg)                       \
+// ({                                          \
+//    uint64_t *regs = (uint64_t *)&msg;       \
+//    regs[0] ^ regs[1] ^ regs[2] ^ regs[3];   \
+// })
+
+#endif

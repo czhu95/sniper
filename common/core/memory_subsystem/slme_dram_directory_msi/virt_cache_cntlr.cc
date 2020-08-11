@@ -341,7 +341,8 @@ MYLOG("%c%c %lx+%u..+%u", mem_op_type == Core::WRITE ? 'W' : 'R', mem_op_type ==
 LOG_ASSERT_ERROR((ca_address & (getCacheBlockSize() - 1)) == 0, "address at cache line + %x", ca_address & (getCacheBlockSize() - 1));
 LOG_ASSERT_ERROR(offset + data_length <= getCacheBlockSize(), "access until %u > %u", offset + data_length, getCacheBlockSize());
 
-   if (Sim()->getSegmentTable()->lookup(ca_address) == SUBSCRIPTION && mem_op_type == Core::WRITE)
+   if ((Sim()->getSegmentTable()->lookup(ca_address) == SUBSCRIPTION ||
+       Sim()->getSegmentTable()->lookup(ca_address) == ATOMIC_SWAP) && mem_op_type == Core::WRITE)
    {
       // LOG_PRINT_WARNING("Subsription policy handles %lx", ca_address);
       hit_where = (HitWhere::where_t)m_mem_component;

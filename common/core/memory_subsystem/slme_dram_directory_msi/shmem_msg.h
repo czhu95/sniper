@@ -49,6 +49,11 @@ namespace SingleLevelMemory
             ATOMIC_UPDATE_REP,
             ATOMIC_UPDATE_DONE,
 
+            USER_CACHE_READ_REQ,
+            USER_CACHE_WRITE_REQ,
+            USER_CACHE_READ_REP,
+            USER_CACHE_WRITE_REP,
+
             POLICY_INIT,
 
             GMM_USER_DONE,

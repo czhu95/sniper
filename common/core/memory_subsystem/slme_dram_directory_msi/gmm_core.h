@@ -110,6 +110,10 @@ namespace SingleLevelMemory
                                            core_id_t receiver, IntPtr address,
                                            Byte* cached_data_buf, ShmemMsg *orig_shmem_msg);
 
+         void retrieveDataAndSendToGMM(ShmemMsg::msg_t reply_msg_type,
+                                       IntPtr address, ShmemMsg *orig_shmem_msg);
+
+
          void processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg);
          void handleMsgFromDRAM(core_id_t sender, ShmemMsg* shmem_msg);
          void sendDataToDram(IntPtr address, core_id_t requester, Byte* data_buf, SubsecondTime now);

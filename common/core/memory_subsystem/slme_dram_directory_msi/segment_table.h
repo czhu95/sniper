@@ -7,10 +7,12 @@
 
 typedef int32_t policy_id_t;
 
+#define INVALID_POLICY      -1
 #define DIRECTORY_COHERENCE 0
 #define REPLICATION         1
 #define ATOMIC_UPDATE       2
 #define SUBSCRIPTION        3
+#define ATOMIC_SWAP         4
 
 namespace SingleLevelMemory
 {

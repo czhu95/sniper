@@ -183,11 +183,9 @@ namespace Sift
       int16_t requester;
       int16_t policy;
       int16_t type;
-      union {
-         int32_t sender;
-         int32_t receiver;
-      };
       int16_t component;
+      int32_t sender;
+      int32_t receiver;
       uint64_t payload[2];
    };
 

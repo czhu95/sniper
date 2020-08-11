@@ -2,23 +2,29 @@
 #define __SIM_API
 
 
-#define SIM_CMD_ROI_TOGGLE       0  // Deprecated, for compatibility with programs compiled long ago
-#define SIM_CMD_ROI_START        1
-#define SIM_CMD_ROI_END          2
-#define SIM_CMD_MHZ_SET          3
-#define SIM_CMD_MARKER           4
-#define SIM_CMD_USER             5
-#define SIM_CMD_INSTRUMENT_MODE  6
-#define SIM_CMD_MHZ_GET          7
-#define SIM_CMD_IN_SIMULATOR     8
-#define SIM_CMD_PROC_ID          9
-#define SIM_CMD_THREAD_ID        10
-#define SIM_CMD_NUM_PROCS        11
-#define SIM_CMD_NUM_THREADS      12
-#define SIM_CMD_NAMED_MARKER     13
-#define SIM_CMD_SET_THREAD_NAME  14
-#define SIM_CMD_GMM_CORE_MESSAGE 15
-#define SIM_CMD_GMM_CORE_PULL    16
+#define SIM_CMD_ROI_TOGGLE        0  // Deprecated, for compatibility with programs compiled long ago
+#define SIM_CMD_ROI_START         1
+#define SIM_CMD_ROI_END           2
+#define SIM_CMD_MHZ_SET           3
+#define SIM_CMD_MARKER            4
+#define SIM_CMD_USER              5
+#define SIM_CMD_INSTRUMENT_MODE   6
+#define SIM_CMD_MHZ_GET           7
+#define SIM_CMD_IN_SIMULATOR      8
+#define SIM_CMD_PROC_ID           9
+#define SIM_CMD_THREAD_ID         10
+#define SIM_CMD_NUM_PROCS         11
+#define SIM_CMD_NUM_THREADS       12
+#define SIM_CMD_NAMED_MARKER      13
+#define SIM_CMD_SET_THREAD_NAME   14
+#define SIM_CMD_GMM_CORE_MESSAGE  15
+#define SIM_CMD_GMM_CORE_PULL     16
+#define SIM_CMD_GMM_MOV_TYPE      17
+#define SIM_CMD_GMM_MOV_COMPONENT 18
+#define SIM_CMD_GMM_MOV_RECV      19
+#define SIM_CMD_GMM_MOV_PAYLOAD1  20
+#define SIM_CMD_GMM_MOV_PAYLOAD2  21
+#define SIM_CMD_GMM_MOV_PAYLOAD   22
 
 #define SIM_OPT_INSTRUMENT_DETAILED    0
 #define SIM_OPT_INSTRUMENT_WARMUP      1
@@ -134,7 +140,14 @@
 #define SimSetInstrumentMode(opt) SimMagic1(SIM_CMD_INSTRUMENT_MODE, opt)
 #define SimInSimulator()          (SimMagic0(SIM_CMD_IN_SIMULATOR)!=SIM_CMD_IN_SIMULATOR)
 
-#define SimGMMCoreMessage(msg, checksum)    SimMagic2(SIM_CMD_GMM_CORE_MESSAGE, (unsigned long)&msg, checksum)
+#define SimGMMCoreMessage()                 SimMagic0(SIM_CMD_GMM_CORE_MESSAGE)
 #define SimGMMCorePull(msg)                 SimMagic1(SIM_CMD_GMM_CORE_PULL, (unsigned long)&msg)
+#define SimGMMCoreMovType(type)             SimMagic1(SIM_CMD_GMM_MOV_TYPE, type)
+#define SimGMMCoreMovComponent(component)   SimMagic1(SIM_CMD_GMM_MOV_COMPONENT, component)
+#define SimGMMCoreMovRecv(recv)             SimMagic1(SIM_CMD_GMM_MOV_RECV, recv)
+#define SimGMMCoreMovPayload1(payload)      SimMagic1(SIM_CMD_GMM_MOV_PAYLOAD1, payload)
+#define SimGMMCoreMovPayload2(payload)      SimMagic1(SIM_CMD_GMM_MOV_PAYLOAD2, payload)
+#define SimGMMCoreMovPayload(p1, p2)        SimMagic2(SIM_CMD_GMM_MOV_PAYLOAD, p1, p2)
+
 
 #endif /* __SIM_API */

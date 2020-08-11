@@ -58,7 +58,7 @@ SegmentTable::create(IntPtr start, uint64_t length)
    m_table[new_seg] = DIRECTORY_COHERENCE;
    m_lock.release();
 
-   MYLOG("Created segment: %p - %p", (void *)new_seg.m_start, (void *)new_seg.m_end);
+   LOG_PRINT_WARNING("Created segment: %p - %p", (void *)new_seg.m_start, (void *)new_seg.m_end);
 }
 
 void
@@ -69,7 +69,7 @@ SegmentTable::assign(IntPtr start, policy_id_t policy_id)
    if (it != m_table.end())
    {
       it->second = policy_id;
-      MYLOG("Segment assign policy: %p - %d", (void *)(*it).m_start, policy_id);
+      LOG_PRINT_WARNING("Segment assign policy: %p - %d", (void *)it->first.m_start, policy_id);
 
       for (core_id_t core_id = (core_id_t)Sim()->getConfig()->getApplicationCores();
            core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); core_id ++)
@@ -97,8 +97,11 @@ SegmentTable::get_home(IntPtr vaddr)
       case SUBSCRIPTION:
          gmm_core_id = (vaddr >> node_offset) & (Sim()->getConfig()->getGMMCores() - 1);
          break;
+      case ATOMIC_SWAP:
+         gmm_core_id = 0;
+         break;
       default:
-         LOG_PRINT_ERROR("Unrecognized policy");
+         LOG_PRINT_ERROR("Unrecognized policy, vaddr=0x%lx, policy=%d", vaddr, policy_id);
    }
 
    return Sim()->getConfig()->getApplicationCores() + gmm_core_id;

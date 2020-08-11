@@ -138,6 +138,7 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
             {
                Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
                buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+               LOG_ASSERT_ERROR(core_msg->policy != INVALID_POLICY, "Built invalid policy.");
                enqueueMessage(core_msg);
             }
             handleMsgFromL2Cache(sender, shmem_msg);
@@ -147,6 +148,7 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
          {
             Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
             buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+            LOG_ASSERT_ERROR(core_msg->policy != INVALID_POLICY, "Built invalid policy.");
             enqueueMessage(core_msg);
             break;
          }
@@ -307,9 +309,22 @@ GMMCore::handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
       case ShmemMsg::ATOMIC_UPDATE_REP:
       case ShmemMsg::ATOMIC_UPDATE_MSG:
       {
+         policy_id_t policy_id = Sim()->getSegmentTable()->lookup(shmem_msg->getAddress());
          Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
-         buildGMMCoreMessage(SUBSCRIPTION, sender, shmem_msg, *core_msg);
+         buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+         LOG_ASSERT_ERROR(core_msg->policy != INVALID_POLICY, "Built invalid policy.");
          enqueueMessage(core_msg);
+         break;
+      }
+      case ShmemMsg::USER_CACHE_READ_REQ:
+      {
+         // Add request onto a queue
+         SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD);
+         IntPtr va = shmem_msg->getAddress();
+         ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
+
+         m_dram_queue_list->enqueue(va, shmem_req);
+         processShReqFromL2Cache(m_dram_queue_list->front(va));
          break;
       }
       default:
@@ -366,7 +381,11 @@ GMMCore::processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf)
 
    MYLOG("Start @ %lx", address);
    updateShmemPerf(shmem_req);
-   retrieveDataAndSendToL2Cache(ShmemMsg::SH_REP, requester, address, NULL, shmem_req->getShmemMsg());
+
+   if (shmem_req->getShmemMsg()->getMsgType() == ShmemMsg::USER_CACHE_READ_REQ)
+      retrieveDataAndSendToGMM(ShmemMsg::USER_CACHE_READ_REQ, address, shmem_req->getShmemMsg());
+   else
+      retrieveDataAndSendToL2Cache(ShmemMsg::SH_REP, requester, address, NULL, shmem_req->getShmemMsg());
 
    MYLOG("End @ %lx", address);
 }
@@ -387,6 +406,7 @@ GMMCore::buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shm
       case MemComponent::CORE:
          switch (policy)
          {
+            case ATOMIC_SWAP:
             case SUBSCRIPTION:
                msg.type = ShmemMsg::ATOMIC_UPDATE_REQ;
                msg.payload[0] = shmem_msg->getAddress();
@@ -399,6 +419,7 @@ GMMCore::buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shm
       case MemComponent::GMM_CORE:
          switch (policy)
          {
+            case ATOMIC_SWAP:
             case SUBSCRIPTION:
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
@@ -412,10 +433,29 @@ GMMCore::buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shm
          switch (policy)
          {
             case SUBSCRIPTION:
-            case REPLICATION:
                LOG_ASSERT_ERROR(shmem_msg->getMsgType() == ShmemMsg::INV_REP || shmem_msg->getMsgType() == ShmemMsg::SH_REQ, "Unrecognized message type.");
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
+               break;
+            case REPLICATION:
+            case ATOMIC_SWAP:
+               msg.type = shmem_msg->getMsgType();
+               msg.payload[0] = shmem_msg->getAddress();
+               if (shmem_msg->getMsgType() == ShmemMsg::INV_REP)
+                  msg.policy = INVALID_POLICY;
+               break;
+            default:
+               LOG_PRINT_ERROR("Not implemented");
+         }
+         break;
+      case MemComponent::DRAM:
+         switch (policy)
+         {
+            case ATOMIC_SWAP:
+               LOG_ASSERT_ERROR(shmem_msg->getMsgType() == ShmemMsg::DRAM_READ_REP, "Unrecognized message type.");
+               msg.type = ShmemMsg::USER_CACHE_READ_REP;
+               msg.payload[0] = shmem_msg->getAddress();
+               msg.payload[1] = 0xBABE;
                break;
             default:
                LOG_PRINT_ERROR("Not implemented");
@@ -572,18 +612,33 @@ GMMCore::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    // Data received from DRAM
 
    //   Which node to reply to?
-
    assert(m_dram_queue_list->size(address) >= 1);
    ShmemReq* shmem_req = m_dram_queue_list->front(address);
    updateShmemPerf(shmem_req);
 
-   //   Which reply type to use?
+   ShmemMsg::msg_t req_msg_type = shmem_req->getShmemMsg()->getMsgType();
+   if (req_msg_type == ShmemMsg::USER_CACHE_READ_REQ)
+   {
+      policy_id_t policy_id = Sim()->getSegmentTable()->lookup(address);
+      LOG_ASSERT_ERROR(policy_id != DIRECTORY_COHERENCE, "Wrong place for directory coherence.");
 
+      Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
+      buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+      LOG_ASSERT_ERROR(core_msg->policy != INVALID_POLICY, "Built invalid policy.");
+      enqueueMessage(core_msg);
+
+      // Process Next Request
+      processNextReqFromL2Cache(address);
+      MYLOG("End @ %lx", address);
+      return;
+   }
+
+   //   Which reply type to use?
    ShmemMsg::msg_t reply_msg_type;
 
    updateShmemPerf(shmem_req, ShmemPerf::TD_ACCESS);
 
-   switch(shmem_req->getShmemMsg()->getMsgType())
+   switch(req_msg_type)
    {
       case ShmemMsg::SH_REQ:
          reply_msg_type = ShmemMsg::SH_REP;
@@ -646,7 +701,9 @@ GMMCore::processInvRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
 
    Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
    buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
-   enqueueMessage(core_msg);
+
+   if (core_msg->policy != INVALID_POLICY)
+      enqueueMessage(core_msg);
 
    MYLOG("End @ %lx", address);
 }
@@ -678,6 +735,38 @@ GMMCore::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
          dram_node /* receiver */,
          address,
          phys_address,
+         NULL, 0,
+         HitWhere::UNKNOWN,
+         orig_shmem_msg->getPerf(),
+         ShmemPerfModel::_SIM_THREAD);
+
+   MYLOG("End @ %lx", address);
+}
+
+void
+GMMCore::retrieveDataAndSendToGMM(ShmemMsg::msg_t reply_msg_type,
+      IntPtr address, ShmemMsg *orig_shmem_msg)
+{
+   MYLOG("Start @ %lx", address);
+   assert(m_dram_queue_list->size(address) > 0);
+   ShmemReq* shmem_req = m_dram_queue_list->front(address);
+
+   // Get the data from DRAM
+   // This could be directly forwarded to the cache or passed
+   // through the Dram Directory Controller
+
+   // Remember that this request is waiting for data, and should not be woken up by voluntary invalidates
+   shmem_req->setWaitForData(true);
+
+   core_id_t dram_node = m_core_id; // m_dram_controller_home_lookup->getHome(address);
+
+   MYLOG("Sending request to DRAM for the data");
+   // LOG_PRINT_WARNING("Retrieving data from user cache @0x%lx", address);
+   getGlobalMemoryManager()->sendMsg(ShmemMsg::DRAM_READ_REQ,
+         MemComponent::GMM_CORE, MemComponent::DRAM,
+         orig_shmem_msg->getRequester() /* requester */,
+         dram_node /* receiver */,
+         address,
          NULL, 0,
          HitWhere::UNKNOWN,
          orig_shmem_msg->getPerf(),
@@ -720,6 +809,7 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
       case ShmemMsg::TLB_INSERT:
          if (msg->component == MemComponent::LAST_LEVEL_CACHE)
             msg->receiver = getGlobalMemoryManager()->getUserFromId(m_core_id);
+
          getGlobalMemoryManager()->sendMsg(static_cast<ShmemMsg::msg_t>(msg->type),
                MemComponent::GMM_CORE, static_cast<MemComponent::component_t>(msg->component),
                msg->requester /* requester */,
@@ -753,7 +843,20 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
             // LOG_PRINT_WARNING("ATOMIC_UPDATE_MSG %d>%d", m_core_id, dest_core_id);
          }
          break;
+      case ShmemMsg::USER_CACHE_READ_REQ:
+         getGlobalMemoryManager()->sendMsg(ShmemMsg::USER_CACHE_READ_REQ,
+               MemComponent::GMM_CORE, MemComponent::GMM_CORE,
+               msg->requester /* requester */,
+               m_core_id /* receiver */,
+               msg->payload[0],
+               msg->payload[1],
+               NULL, 0,
+               HitWhere::UNKNOWN,
+               &m_dummy_shmem_perf,
+               ShmemPerfModel::_USER_THREAD);
+         break;
       case ShmemMsg::GMM_CORE_DONE:
+      case ShmemMsg::USER_CACHE_WRITE_REQ:
          break;
       // case TLB_INSERT:
       //    getGlobalMemoryManager()->sendMsg(ShmemMsg::TLB_INSERT,

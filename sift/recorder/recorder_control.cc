@@ -16,6 +16,8 @@
 
 static AFUNPTR extrae_event_rtn = NULL;
 
+static Sift::GMMCoreMessage gmm_core_msg;
+
 VOID call_extrae_event(const CONTEXT * ctxt, THREADID threadid, unsigned long event, unsigned long value)
 {
 
@@ -156,7 +158,7 @@ void setInstrumentationMode(Sift::Mode mode)
    }
 }
 
-ADDRINT handleMagic(THREADID threadid, CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx, ADDRINT gcx, ADDRINT gdx)
+ADDRINT handleMagic(THREADID threadid, const CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx, ADDRINT gcx)
 {
    uint64_t res = gax; // Default: don't modify gax
 
@@ -164,21 +166,18 @@ ADDRINT handleMagic(THREADID threadid, CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx,
    {
       if (gax == SIM_CMD_GMM_CORE_MESSAGE)
       {
-         Sift::GMMCoreMessage msg;
-         PIN_SafeCopy(&msg, (void *)gbx, sizeof(Sift::GMMCoreMessage));
          // Sift::GMMCoreMessage msg{gbx >> 32, (int32_t)(gbx & 0xffffffffUL), gcx, gdx};
-         // fprintf(stderr, "[%d]GMMCoreMessage: id=%d, type=%d, receiver=%d, payload[0]=%lx, payload[1]=%lx\n", app_id, msg.policy, msg.type, msg.receiver, msg.payload[0], msg.payload[1]);
-         thread_data[threadid].output->SendGMMCoreMessage(msg);
+         // fprintf(stderr, "[%d]GMMCoreMessage: id=%d, type=%d, receiver=%d, payload[0]=%lx, payload[1]=%lx\n", app_id, gmm_core_msg.policy, gmm_core_msg.type, gmm_core_msg.receiver, gmm_core_msg.payload[0], gmm_core_msg.payload[1]);
+         thread_data[threadid].output->SendGMMCoreMessage(gmm_core_msg);
          setInstrumentationMode(Sift::ModeDetailed);
       }
       else if (gax == SIM_CMD_GMM_CORE_PULL)
       {
-         Sift::GMMCoreMessage msg;
-         thread_data[threadid].output->PullGMMCoreMessage(msg);
-         // fprintf(stderr, "[%d]GMMCorePull: id=%d, type=%d, addr=%lx\n", app_id, msg.policy, msg.type, msg.payload[0]);
-         if (msg.policy != -1)
+         thread_data[threadid].output->PullGMMCoreMessage(gmm_core_msg);
+         // fprintf(stderr, "[%d]GMMCorePull: id=%d, type=%d, addr1=%lx, addr2=%lx\n", app_id, gmm_core_msg.policy, gmm_core_msg.type, gmm_core_msg.payload[0], gmm_core_msg.payload[1]);
+         if (gmm_core_msg.policy != -1)
          {
-            PIN_SafeCopy((void *)gbx, &msg, sizeof(Sift::GMMCoreMessage));
+            PIN_SafeCopy((void *)gbx, &gmm_core_msg, sizeof(Sift::GMMCoreMessage));
             res = 0;
          }
          else
@@ -189,6 +188,37 @@ ADDRINT handleMagic(THREADID threadid, CONTEXT * ctxt, ADDRINT gax, ADDRINT gbx,
          // PIN_SetContextReg(ctxt, REG_GCX, msg.addr);
          // PIN_SetContextReg(ctxt, REG_GDX, msg.length);
 
+      }
+      else if (gax == SIM_CMD_GMM_MOV_TYPE)
+      {
+         gmm_core_msg.type = (int16_t)gbx;
+         // fprintf(stderr, "[%d]GMMCoreMov: type = %d\n", app_id, gmm_core_msg.type);
+      }
+      else if (gax == SIM_CMD_GMM_MOV_COMPONENT)
+      {
+         gmm_core_msg.component = (int16_t)gbx;
+         // fprintf(stderr, "[%d]GMMCoreMov: component = %d\n", app_id, gmm_core_msg.component);
+      }
+      else if (gax == SIM_CMD_GMM_MOV_RECV)
+      {
+         gmm_core_msg.receiver = (int32_t)gbx;
+         // fprintf(stderr, "[%d]GMMCoreMov: recv = %d\n", app_id, gmm_core_msg.receiver);
+      }
+      else if (gax == SIM_CMD_GMM_MOV_PAYLOAD1)
+      {
+         gmm_core_msg.payload[0] = gbx;
+         // fprintf(stderr, "[%d]GMMCoreMov: payload1 = %lx\n", app_id, gmm_core_msg.payload[0]);
+      }
+      else if (gax == SIM_CMD_GMM_MOV_PAYLOAD2)
+      {
+         gmm_core_msg.payload[1] = gbx;
+         // fprintf(stderr, "[%d]GMMCoreMov: payload2 = %lx\n", app_id, gmm_core_msg.payload[1]);
+      }
+      else if (gax == SIM_CMD_GMM_MOV_PAYLOAD)
+      {
+         gmm_core_msg.payload[0] = gbx;
+         gmm_core_msg.payload[1] = gcx;
+         // fprintf(stderr, "[%d]GMMCoreMov: payload1 = %lx, payload2 = %lx\n", app_id, gmm_core_msg.payload[0], gmm_core_msg.payload[1]);
       }
       else
       {

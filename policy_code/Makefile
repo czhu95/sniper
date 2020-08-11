@@ -1,2 +1,2 @@
 all:
-	g++ -O2 -o gmm_bin subscription.cc -I..
+	g++ -O2 -o gmm_bin main.cc -I..
