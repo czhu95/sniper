@@ -348,6 +348,13 @@ LOG_ASSERT_ERROR(offset + data_length <= getCacheBlockSize(), "access until %u >
       return hit_where;
    }
 
+   if (Sim()->getSegmentTable()->lookup(ca_address) == REPLICATION && mem_op_type == Core::WRITE)
+   {
+      LOG_PRINT_WARNING("Write into replicated memory %lx", ca_address);
+      hit_where = (HitWhere::where_t)m_mem_component;
+      return hit_where;
+   }
+
    #ifdef PRIVATE_L2_OPTIMIZATION
    /* if this is the second part of an atomic operation: we already have the lock, don't lock again */
    if (lock_signal != Core::UNLOCK)

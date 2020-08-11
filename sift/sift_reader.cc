@@ -627,9 +627,9 @@ bool Sift::Reader::Read(Instruction &inst)
             }
             case RecOtherGMMCorePull:
             {
-               // #if VERBOSE > 0
+               #if VERBOSE > 0
                std::cerr << "[DEBUG:" << m_id << "] Read GMMCorePull" << std::endl;
-               // #endif
+               #endif
                assert(rec.Other.size == 0);
                GMMCoreMessage *msg;
                if (handleGMMCorePullFunc)

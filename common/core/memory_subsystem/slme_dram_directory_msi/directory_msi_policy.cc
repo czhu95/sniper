@@ -735,7 +735,7 @@ DirectoryMSIPolicy::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
       IntPtr phys_address = orig_shmem_msg->getPhysAddress();
       assert(phys_address != INVALID_ADDRESS);
 
-      MYLOG("Sending request to DRAM for the data");
+      MYLOG("Sending request to DRAM %d for the data", dram_node);
       getMemoryManager()->sendMsg(ShmemMsg::DRAM_READ_REQ,
             MemComponent::GMM_CORE, MemComponent::DRAM,
             receiver /* requester */,
@@ -808,7 +808,7 @@ DirectoryMSIPolicy::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
 
    // if (hit_where == HitWhere::DRAM_REMOTE)
    // {
-   //    LOG_PRINT_WARNING("Directory Policy: Remote DRAM access: va = %p", address);
+   //    LOG_PRINT_WARNING("Directory Policy: Remote DRAM access: va = %p, cnt = %d", address, ++remote_cnt);
    // }
    // else
    // {

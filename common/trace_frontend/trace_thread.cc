@@ -800,15 +800,15 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
    {
       assert(inst.num_addresses);
       UInt64 mem_address = inst.addresses[0];
-      static UInt64 atomic_eip = 0UL;
-      if (Sim()->getSegmentTable()->lookup(mem_address) == ATOMIC_SWAP)
-      {
-         if (atomic_eip != inst.sinst->addr)
-         {
-            LOG_PRINT_WARNING("Atomic inst on %lx, @%lx", mem_address, inst.sinst->addr);
-            atomic_eip = inst.sinst->addr;
-         }
-      }
+      // static UInt64 atomic_eip = 0UL;
+      // if (Sim()->getSegmentTable()->lookup(mem_address) == ATOMIC_SWAP)
+      // {
+      //    if (atomic_eip != inst.sinst->addr)
+      //    {
+      //       LOG_PRINT_WARNING("Atomic inst on %lx, @%lx", mem_address, inst.sinst->addr);
+      //       atomic_eip = inst.sinst->addr;
+      //    }
+      // }
       if (Sim()->getSegmentTable()->lookup(mem_address) == SUBSCRIPTION)
       {
          LOG_PRINT_WARNING("GMMUserMessage: type=10, addr=%lx", mem_address);

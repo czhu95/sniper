@@ -52,6 +52,8 @@ namespace SingleLevelMemory
          UInt64 evict[DirectoryState::NUM_DIRECTORY_STATES];
          UInt64 forward, forward_failed;
 
+         int remote_cnt = 0;
+
          UInt32 getCacheBlockSize() { return m_cache_block_size; }
          ShmemPerfModel* getShmemPerfModel() { return m_shmem_perf_model; }
 
