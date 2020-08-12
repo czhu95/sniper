@@ -518,6 +518,7 @@ GMMCore::dequeueMessage()
       // Waken by signalStop
       if (m_msg_queue.empty())
       {
+         m_msg_queue_lock.release();
          return NULL;
       }
 
