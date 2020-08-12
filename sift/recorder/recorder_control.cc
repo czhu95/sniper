@@ -167,14 +167,14 @@ ADDRINT handleMagic(THREADID threadid, const CONTEXT * ctxt, ADDRINT gax, ADDRIN
       if (gax == SIM_CMD_GMM_CORE_MESSAGE)
       {
          // Sift::GMMCoreMessage msg{gbx >> 32, (int32_t)(gbx & 0xffffffffUL), gcx, gdx};
-         // fprintf(stderr, "[%d]GMMCoreMessage: id=%d, type=%d, receiver=%d, payload[0]=%lx, payload[1]=%lx\n", app_id, gmm_core_msg.policy, gmm_core_msg.type, gmm_core_msg.receiver, gmm_core_msg.payload[0], gmm_core_msg.payload[1]);
+         fprintf(stderr, "[%d]GMMCoreMessage: id=%d, type=%d, receiver=%d, payload[0]=%lx, payload[1]=%lx\n", app_id, gmm_core_msg.policy, gmm_core_msg.type, gmm_core_msg.receiver, gmm_core_msg.payload[0], gmm_core_msg.payload[1]);
          thread_data[threadid].output->SendGMMCoreMessage(gmm_core_msg);
          setInstrumentationMode(Sift::ModeDetailed);
       }
       else if (gax == SIM_CMD_GMM_CORE_PULL)
       {
          thread_data[threadid].output->PullGMMCoreMessage(gmm_core_msg);
-         // fprintf(stderr, "[%d]GMMCorePull: id=%d, type=%d, addr1=%lx, addr2=%lx\n", app_id, gmm_core_msg.policy, gmm_core_msg.type, gmm_core_msg.payload[0], gmm_core_msg.payload[1]);
+         fprintf(stderr, "[%d]GMMCorePull: id=%d, type=%d, addr1=%lx, addr2=%lx\n", app_id, gmm_core_msg.policy, gmm_core_msg.type, gmm_core_msg.payload[0], gmm_core_msg.payload[1]);
          if (gmm_core_msg.policy != -1)
          {
             PIN_SafeCopy((void *)gbx, &gmm_core_msg, sizeof(Sift::GMMCoreMessage));

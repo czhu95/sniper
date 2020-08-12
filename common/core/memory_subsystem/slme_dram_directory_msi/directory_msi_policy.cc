@@ -215,7 +215,7 @@ DirectoryMSIPolicy::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
          break;
 
       default:
-         LOG_PRINT_ERROR("Unrecognized Shmem Msg Type: %u", shmem_msg_type);
+         LOG_PRINT_ERROR("Unrecognized Shmem Msg Type: %u, va=%lx", shmem_msg_type, va);
          break;
 
       case ShmemMsg::UPGRADE_REQ:
@@ -844,18 +844,21 @@ DirectoryMSIPolicy::processInvRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_m
    assert(directory_entry);
 
    DirectoryBlockInfo* directory_block_info = directory_entry->getDirectoryBlockInfo();
-   LOG_ASSERT_ERROR(directory_block_info->getDState() == DirectoryState::SHARED || directory_block_info->getDState() == DirectoryState::EXCLUSIVE, "Ooops (va = %p, pa = %p)", address, shmem_msg->getPhysAddress());
-   assert(directory_block_info->getDState() == DirectoryState::SHARED || directory_block_info->getDState() == DirectoryState::EXCLUSIVE);
+   LOG_ASSERT_WARNING(directory_block_info->getDState() == DirectoryState::SHARED || directory_block_info->getDState() == DirectoryState::EXCLUSIVE, "Ooops (va = %p, pa = %p)", address, shmem_msg->getPhysAddress());
+   // assert(directory_block_info->getDState() == DirectoryState::SHARED || directory_block_info->getDState() == DirectoryState::EXCLUSIVE);
 
-   LOG_ASSERT_ERROR(directory_entry->hasSharer(sender), "va = %p, pa = %p", address, shmem_msg->getPhysAddress());
-   directory_entry->removeSharer(sender);
-   if (directory_entry->getForwarder() == sender)
+   LOG_ASSERT_WARNING(directory_entry->hasSharer(sender), "va = %p, pa = %p", address, shmem_msg->getPhysAddress());
+   if (directory_entry->hasSharer(sender))
    {
-      directory_entry->setForwarder(INVALID_CORE_ID);
-   }
-   if (directory_entry->getNumSharers() == 0)
-   {
-      directory_block_info->setDState(DirectoryState::UNCACHED);
+      directory_entry->removeSharer(sender);
+      if (directory_entry->getForwarder() == sender)
+      {
+         directory_entry->setForwarder(INVALID_CORE_ID);
+      }
+      if (directory_entry->getNumSharers() == 0)
+      {
+         directory_block_info->setDState(DirectoryState::UNCACHED);
+      }
    }
 
    if (m_dram_directory_req_queue_list->size(address) > 0)
@@ -1123,10 +1126,13 @@ DirectoryMSIPolicy::processFlushRepFromL2Cache(core_id_t sender, ShmemMsg* shmem
    DirectoryBlockInfo* directory_block_info = directory_entry->getDirectoryBlockInfo();
    directory_block_info->setSLMeAvailable(now);
 
-   LOG_ASSERT_ERROR(directory_entry->hasSharer(sender), "va = %p, pa = %p", address, shmem_msg->getPhysAddress());
-   directory_entry->removeSharer(sender);
-   directory_entry->setForwarder(INVALID_CORE_ID);
-   directory_entry->setOwner(INVALID_CORE_ID);
+   LOG_ASSERT_WARNING(directory_entry->hasSharer(sender), "va = %p, pa = %p", address, shmem_msg->getPhysAddress());
+   if (directory_entry->hasSharer(sender))
+   {
+      directory_entry->removeSharer(sender);
+      directory_entry->setForwarder(INVALID_CORE_ID);
+      directory_entry->setOwner(INVALID_CORE_ID);
+   }
 
    // could be that this is a FLUSH to force a core with S-state to to write back clean data
    // to avoid a memory access

@@ -18,8 +18,8 @@ class AtomicSwap : public Policy
    const uint64_t block_logsize = 20;
    const uint64_t block_size = 1UL << block_logsize;
    const uint64_t block_mask = ~(block_size - 1);
-   const uint64_t num_nodes = 2;
-   const uint64_t app_cores = 8;
+   const uint64_t num_nodes = 4;
+   const uint64_t app_cores = 32;
    const uint64_t shared_cores = app_cores / num_nodes;
 
    bool *block_map; // [length / block_size + 1];
@@ -116,7 +116,7 @@ public:
                SimGMMCoreMovPayload1(seg_start);
                SimGMMCoreMovPayload2(seg_end);
 
-               // printf("[GMM Core] Send GMM message type = %d, start = %lx, end = %lx\n", 
+               // printf("[GMM Core] Send GMM message type = %d, start = %lx, end = %lx\n",
                //        msg.type, msg.payload[0], msg.payload[1]);
                SimGMMCoreMessage();
             }
@@ -268,7 +268,7 @@ public:
 
    }
 
-   
+
 };
 
 // const uint64_t start = 0x55555ee516f0;

@@ -101,7 +101,7 @@ SegmentTable::get_home(IntPtr vaddr)
          gmm_core_id = 0;
          break;
       default:
-         LOG_PRINT_ERROR("Unrecognized policy, vaddr=0x%lx, policy=%d", vaddr, policy_id);
+         return INVALID_CORE_ID;
    }
 
    return Sim()->getConfig()->getApplicationCores() + gmm_core_id;
