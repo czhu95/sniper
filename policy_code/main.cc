@@ -1,11 +1,13 @@
 #include "include/sim_api.h"
 #include "atomic_swap.hpp"
+#include "hash_cas.hpp"
 #include "replication.hpp"
 
 int main()
 {
    AtomicSwap atomic_swap_policy;
    Replication replication_policy;
+   HashCAS hash_cas_policy;
    GMMCoreMessage msg;
 
    // for (auto &b : block_map)
@@ -24,6 +26,9 @@ int main()
             break;
          case 4 /*atomic_swap*/:
             atomic_swap_policy.Exec(msg);
+            break;
+         case 5 /* hash_cas */:
+            hash_cas_policy.Exec(msg);
             break;
          default:
             break;

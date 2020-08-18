@@ -95,6 +95,7 @@ SegmentTable::get_home(IntPtr vaddr)
    switch (policy_id)
    {
       case SUBSCRIPTION:
+      case HASH_CAS:
          gmm_core_id = (vaddr >> node_offset) & (Sim()->getConfig()->getGMMCores() - 1);
          break;
       case ATOMIC_SWAP:

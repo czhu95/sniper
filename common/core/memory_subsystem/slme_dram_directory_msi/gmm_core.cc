@@ -407,6 +407,7 @@ GMMCore::buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shm
          switch (policy)
          {
             case ATOMIC_SWAP:
+            case HASH_CAS:
             case SUBSCRIPTION:
                msg.type = ShmemMsg::ATOMIC_UPDATE_REQ;
                msg.payload[0] = shmem_msg->getAddress();
@@ -420,6 +421,7 @@ GMMCore::buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shm
          switch (policy)
          {
             case ATOMIC_SWAP:
+            case HASH_CAS:
             case SUBSCRIPTION:
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
@@ -439,6 +441,7 @@ GMMCore::buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shm
                break;
             case REPLICATION:
             case ATOMIC_SWAP:
+            case HASH_CAS:
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
                if (shmem_msg->getMsgType() == ShmemMsg::INV_REP)
@@ -452,6 +455,7 @@ GMMCore::buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shm
          switch (policy)
          {
             case ATOMIC_SWAP:
+            case HASH_CAS:
                LOG_ASSERT_ERROR(shmem_msg->getMsgType() == ShmemMsg::DRAM_READ_REP, "Unrecognized message type.");
                msg.type = ShmemMsg::USER_CACHE_READ_REP;
                msg.payload[0] = shmem_msg->getAddress();
