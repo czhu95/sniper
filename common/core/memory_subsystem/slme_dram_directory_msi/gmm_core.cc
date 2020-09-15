@@ -801,9 +801,9 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, m_msg_time + process_time + queue_delay);
 
    m_msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
-   // LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d, addr=%lx, process=%s, queue_delay=%s",
-   //                   m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(),
-   //                   msg->type, msg->payload[0], itostr(process_time).c_str(), itostr(queue_delay).c_str());
+   LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d, addr=%lx, process=%s, queue_delay=%s",
+                     m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(),
+                     msg->type, msg->payload[0], itostr(process_time).c_str(), itostr(queue_delay).c_str());
 
    switch (msg->type)
    {
