@@ -20,22 +20,25 @@ namespace SingleLevelMemory
 {
 
 SegmentTable::SegmentTable()
+   : m_next_segment_id(0)
 {
 }
 
-policy_id_t
-SegmentTable::lookup(IntPtr address)
+bool
+SegmentTable::lookup(IntPtr address, policy_id_t &policy_id, uint64_t &segment_id)
 {
-   policy_id_t policy_id = DIRECTORY_COHERENCE;
    m_lock.acquire_read();
    auto it = m_table.find({0, address, address + 1});
    if (it != m_table.end())
    {
       policy_id = it->second;
+      segment_id = it->first.m_segment_id;
+      m_lock.release_read();
+      return true;
    }
    m_lock.release_read();
-
-   return policy_id;
+   policy_id = DIRECTORY_COHERENCE;
+   return false;
 }
 
 void
@@ -50,7 +53,7 @@ SegmentTable::command(uint64_t cmd_type, IntPtr start, uint64_t arg1)
 void
 SegmentTable::create(IntPtr start, uint64_t length)
 {
-   Segment new_seg{0, start, start + length};
+   Segment new_seg{m_next_segment_id ++, start, start + length};
    m_lock.acquire();
 
    LOG_ASSERT_ERROR(m_table.count(new_seg) == 0, "Segment overlapped.");
@@ -58,7 +61,7 @@ SegmentTable::create(IntPtr start, uint64_t length)
    m_table[new_seg] = DIRECTORY_COHERENCE;
    m_lock.release();
 
-   LOG_PRINT_WARNING("Created segment: %p - %p", (void *)new_seg.m_start, (void *)new_seg.m_end);
+   LOG_PRINT_WARNING("Created segment: [%d] %p - %p", new_seg.m_segment_id, (void *)new_seg.m_start, (void *)new_seg.m_end);
 }
 
 void
@@ -69,12 +72,13 @@ SegmentTable::assign(IntPtr start, policy_id_t policy_id)
    if (it != m_table.end())
    {
       it->second = policy_id;
-      LOG_PRINT_WARNING("Segment assign policy: %p - %d", (void *)it->first.m_start, policy_id);
+      auto seg_id = it->first.m_segment_id;
+      LOG_PRINT_WARNING("Segment assign policy: [%d] %p - %d", it->first.m_segment_id, (void *)it->first.m_start, policy_id);
 
       for (core_id_t core_id = (core_id_t)Sim()->getConfig()->getApplicationCores();
            core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); core_id ++)
       {
-         Sim()->getGMMCoreManager()->getGMMCoreFromID(core_id)->policyInit(policy_id, it->first.m_start, it->first.m_end);
+         Sim()->getGMMCoreManager()->getGMMCoreFromID(core_id)->policyInit(seg_id, policy_id, it->first.m_start, it->first.m_end);
       }
    }
    m_lock.release();
@@ -91,7 +95,9 @@ core_id_t
 SegmentTable::get_home(IntPtr vaddr)
 {
    core_id_t gmm_core_id;
-   policy_id_t policy_id = lookup(vaddr);
+   uint64_t seg_id;
+   policy_id_t policy_id;
+   lookup(vaddr, policy_id, seg_id);
    switch (policy_id)
    {
       case SUBSCRIPTION:

@@ -70,7 +70,7 @@ namespace SingleLevelMemory
          void handleGMMCoreMessage(Sift::GMMCoreMessage *msg, SubsecondTime now);
 
          void signalStop();
-         void policyInit(int policy_id, uint64_t start, uint64_t end);
+         void policyInit(int seg_id, int policy_id, uint64_t start, uint64_t end);
 
       protected:
          DirectoryMSIPolicy* m_directory_policy;
@@ -94,7 +94,7 @@ namespace SingleLevelMemory
 
          GlobalMemoryManager* getGlobalMemoryManager() { return m_global_memory_manager; }
 
-         void buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shmem_msg, Sift::GMMCoreMessage &msg);
+         void buildGMMCoreMessage(uint64_t seg_id, policy_id_t policy, core_id_t sender, ShmemMsg *shmem_msg, Sift::GMMCoreMessage &msg);
 
          void updateShmemPerf(ShmemReq *shmem_req, ShmemPerf::shmem_times_type_t reason = ShmemPerf::UNKNOWN)
          {

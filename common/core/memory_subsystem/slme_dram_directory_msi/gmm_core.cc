@@ -121,7 +121,9 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
    // bool slb_hit = false;
 
    // Look up policy
-   policy_id_t policy_id = Sim()->getSegmentTable()->lookup(address);
+   policy_id_t policy_id;
+   uint64_t seg_id;
+   Sim()->getSegmentTable()->lookup(shmem_msg->getAddress(), policy_id, seg_id);
 
    if (policy_id != DIRECTORY_COHERENCE)
    {
@@ -137,7 +139,7 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
                 && m_tlb.count({address, address + 1}) == 0)
             {
                Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
-               buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+               buildGMMCoreMessage(seg_id, policy_id, sender, shmem_msg, *core_msg);
                LOG_ASSERT_ERROR(core_msg->policy != INVALID_POLICY, "Built invalid policy.");
                enqueueMessage(core_msg);
             }
@@ -147,7 +149,7 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
          case MemComponent::CORE:
          {
             Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
-            buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+            buildGMMCoreMessage(seg_id, policy_id, sender, shmem_msg, *core_msg);
             LOG_ASSERT_ERROR(core_msg->policy != INVALID_POLICY, "Built invalid policy.");
             enqueueMessage(core_msg);
             break;
@@ -309,9 +311,11 @@ GMMCore::handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
       case ShmemMsg::ATOMIC_UPDATE_REP:
       case ShmemMsg::ATOMIC_UPDATE_MSG:
       {
-         policy_id_t policy_id = Sim()->getSegmentTable()->lookup(shmem_msg->getAddress());
+         policy_id_t policy_id;
+         uint64_t seg_id;
+         Sim()->getSegmentTable()->lookup(shmem_msg->getAddress(), policy_id, seg_id);
          Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
-         buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+         buildGMMCoreMessage(seg_id, policy_id, sender, shmem_msg, *core_msg);
          LOG_ASSERT_ERROR(core_msg->policy != INVALID_POLICY, "Built invalid policy.");
          enqueueMessage(core_msg);
          break;
@@ -391,10 +395,11 @@ GMMCore::processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf)
 }
 
 void
-GMMCore::buildGMMCoreMessage(policy_id_t policy, core_id_t sender, ShmemMsg *shmem_msg, Sift::GMMCoreMessage &msg)
+GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sender, ShmemMsg *shmem_msg, Sift::GMMCoreMessage &msg)
 {
    LOG_ASSERT_ERROR(policy != DIRECTORY_COHERENCE, "Directory coherence maintained by hardware.");
 
+   msg.segid = segid;
    msg.policy = policy;
    msg.sender = sender;
    msg.requester = shmem_msg->getRequester();
@@ -619,11 +624,13 @@ GMMCore::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    ShmemMsg::msg_t req_msg_type = shmem_req->getShmemMsg()->getMsgType();
    if (req_msg_type == ShmemMsg::USER_CACHE_READ_REQ)
    {
-      policy_id_t policy_id = Sim()->getSegmentTable()->lookup(address);
-      LOG_ASSERT_ERROR(policy_id != DIRECTORY_COHERENCE, "Wrong place for directory coherence.");
+      policy_id_t policy_id;
+      uint64_t seg_id;
+      bool found = Sim()->getSegmentTable()->lookup(shmem_msg->getAddress(), policy_id, seg_id);
+      LOG_ASSERT_ERROR(found, "Segment not found.");
 
       Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
-      buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+      buildGMMCoreMessage(seg_id, policy_id, sender, shmem_msg, *core_msg);
       LOG_ASSERT_ERROR(core_msg->policy != INVALID_POLICY, "Built invalid policy.");
       enqueueMessage(core_msg);
 
@@ -696,11 +703,13 @@ GMMCore::processInvRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
 
    MYLOG("Start @ %lx", address);
 
-   policy_id_t policy_id = Sim()->getSegmentTable()->lookup(address);
-   LOG_ASSERT_ERROR(policy_id != DIRECTORY_COHERENCE, "Wrong place for directory coherence.");
+   policy_id_t policy_id;
+   uint64_t seg_id;
+   bool found = Sim()->getSegmentTable()->lookup(shmem_msg->getAddress(), policy_id, seg_id);
+   LOG_ASSERT_ERROR(found, "Segment not found.");
 
    Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
-   buildGMMCoreMessage(policy_id, sender, shmem_msg, *core_msg);
+   buildGMMCoreMessage(seg_id, policy_id, sender, shmem_msg, *core_msg);
 
    if (core_msg->policy != INVALID_POLICY)
       enqueueMessage(core_msg);
@@ -902,9 +911,10 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
 }
 
 void
-GMMCore::policyInit(int policy_id, uint64_t start, uint64_t end)
+GMMCore::policyInit(int seg_id, int policy_id, uint64_t start, uint64_t end)
 {
    Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
+   core_msg->segid = seg_id;
    core_msg->policy = policy_id;
    core_msg->type = ShmemMsg::POLICY_INIT;
    core_msg->requester = m_core_id;

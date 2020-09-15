@@ -87,11 +87,12 @@ namespace SingleLevelMemory
       protected:
          std::map<Segment, policy_id_t> m_table;
          Lock m_lock;
+         uint64_t m_next_segment_id;
 
       public:
          SegmentTable();
 
-         policy_id_t lookup(IntPtr vaddr);
+         bool lookup(IntPtr vaddr, policy_id_t &policy_id, uint64_t &seg_id);
          void command(uint64_t cmd_type, IntPtr start, uint64_t arg1);
          void create(IntPtr start, uint64_t length);
          void assign(IntPtr start, policy_id_t policy_id);

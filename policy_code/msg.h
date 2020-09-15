@@ -41,7 +41,7 @@ enum msg_t
 
    USER_CACHE_READ_REQ,
    USER_CACHE_WRITE_REQ,
-   USER_CACHE_READ_REP,
+   USER_CACHE_READ_REP,    /* 30 */
    USER_CACHE_WRITE_REP,
 
    POLICY_INIT,
@@ -81,7 +81,8 @@ enum component_t
 
 struct GMMCoreMessage {
    int16_t requester;
-   int16_t policy;
+   int8_t segid;
+   int8_t policy;
    int16_t type;
    int16_t component;
    int32_t sender;

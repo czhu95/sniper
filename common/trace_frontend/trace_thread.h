@@ -81,6 +81,7 @@ class TraceThread : public Runnable
       bool m_started;
       bool m_flushed;
       bool m_virt_cache;
+      int m_cache_block_size;
 
       void run();
       virtual void signalStarted();

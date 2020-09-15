@@ -181,7 +181,8 @@ namespace Sift
 
    struct GMMCoreMessage {
       int16_t requester;
-      int16_t policy;
+      int8_t segid;
+      int8_t policy;
       int16_t type;
       int16_t component;
       int32_t sender;

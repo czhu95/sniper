@@ -60,6 +60,7 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
    , m_started(false)
    , m_flushed(false)
    , m_virt_cache(false)
+   , m_cache_block_size(Sim()->getCfg()->getInt("perf_model/l1_icache/cache_block_size"))
    , m_stopped(false)
 {
 
@@ -134,7 +135,7 @@ UInt64 TraceThread::va2pa(UInt64 va, bool *noMapping)
    if (m_trace_has_pa)
    {
       UInt64 pa = m_trace.va2pa(va);
-      // LOG_ASSERT_WARNING(pa, "Cannot translate va: %p, thread id = %d", va, m_thread->getId());
+      LOG_ASSERT_ERROR(pa, "Cannot translate va: %p, thread id = %d", va, m_thread->getId());
 
       if (pa == 0)
       {
@@ -662,6 +663,9 @@ void TraceThread::handleInstructionWarmup(Sift::Instruction &inst, Sift::Instruc
                   mem_address = inst.addresses[mem_idx];
                }
 
+               if (is_prefetch)
+                  mem_address &= ~(m_cache_block_size - 1);
+
                bool no_mapping = false;
                UInt64 pa = m_virt_cache ? mem_address : va2pa(mem_address, is_prefetch ? &no_mapping : NULL);
                if (no_mapping)
@@ -800,16 +804,19 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
    {
       assert(inst.num_addresses);
       UInt64 mem_address = inst.addresses[0];
-      static UInt64 atomic_eip = 0UL;
-      if (Sim()->getSegmentTable()->lookup(mem_address) == ATOMIC_SWAP)
-      {
-         if (atomic_eip != inst.sinst->addr)
-         {
-            LOG_PRINT_WARNING("Atomic inst on %lx, @%lx", mem_address, inst.sinst->addr);
-            atomic_eip = inst.sinst->addr;
-         }
-      }
-      if (Sim()->getSegmentTable()->lookup(mem_address) == SUBSCRIPTION)
+      // static UInt64 atomic_eip = 0UL;
+      // if (Sim()->getSegmentTable()->lookup(mem_address) == ATOMIC_SWAP)
+      // {
+      //    if (atomic_eip != inst.sinst->addr)
+      //    {
+      //       LOG_PRINT_WARNING("Atomic inst on %lx, @%lx", mem_address, inst.sinst->addr);
+      //       atomic_eip = inst.sinst->addr;
+      //    }
+      // }
+      policy_id_t policy_id;
+      uint64_t seg_id;
+      Sim()->getSegmentTable()->lookup(mem_address, policy_id, seg_id);
+      if (policy_id == SUBSCRIPTION)
       {
          LOG_PRINT_WARNING("GMMUserMessage: type=10, addr=%lx", mem_address);
          Sift::GMMUserMessage *msg = new Sift::GMMUserMessage{10, mem_address, 0};
@@ -846,6 +853,9 @@ void TraceThread::addDetailedMemoryInfo(DynamicInstruction *dynins, Sift::Instru
       assert(mem_idx < inst.num_addresses);
       mem_address = inst.addresses[mem_idx];
    }
+
+   if (is_prefetch)
+      mem_address &= ~(m_cache_block_size - 1);
 
    bool no_mapping = false;
    UInt64 mem_addr = m_virt_cache ? mem_address :

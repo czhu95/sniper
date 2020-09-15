@@ -341,8 +341,11 @@ MYLOG("%c%c %lx+%u..+%u", mem_op_type == Core::WRITE ? 'W' : 'R', mem_op_type ==
 LOG_ASSERT_ERROR((ca_address & (getCacheBlockSize() - 1)) == 0, "address at cache line + %x", ca_address & (getCacheBlockSize() - 1));
 LOG_ASSERT_ERROR(offset + data_length <= getCacheBlockSize(), "access until %u > %u", offset + data_length, getCacheBlockSize());
 
-   if ((Sim()->getSegmentTable()->lookup(ca_address) == SUBSCRIPTION ||
-       Sim()->getSegmentTable()->lookup(ca_address) == ATOMIC_SWAP) && mem_op_type == Core::WRITE)
+   policy_id_t policy;
+   uint64_t segid;
+   Sim()->getSegmentTable()->lookup(ca_address, policy, segid);
+
+   if ((policy == SUBSCRIPTION || policy == ATOMIC_SWAP) && mem_op_type == Core::WRITE)
    {
       // LOG_PRINT_WARNING("Subsription policy handles %lx", ca_address);
       hit_where = (HitWhere::where_t)m_mem_component;
@@ -1560,7 +1563,7 @@ MYLOG("evict FLUSH %lx", evict_address);
                   evict_buf, getCacheBlockSize(),
                   HitWhere::UNKNOWN, &m_dummy_shmem_perf, thread_num);
          }
-         else if (Sim()->getSegmentTable()->lookup(evict_address) != SUBSCRIPTION)
+         else // if (Sim()->getSegmentTable()->lookup(evict_address) != SUBSCRIPTION)
          {
 MYLOG("evict INV %lx", evict_address);
             LOG_ASSERT_ERROR(evict_block_info.getCState() == CacheState::SHARED || evict_block_info.getCState() == CacheState::EXCLUSIVE,
