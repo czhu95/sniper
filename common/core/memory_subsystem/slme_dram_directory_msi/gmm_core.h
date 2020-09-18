@@ -118,6 +118,7 @@ namespace SingleLevelMemory
          void handleMsgFromDRAM(core_id_t sender, ShmemMsg* shmem_msg);
          void sendDataToDram(IntPtr address, core_id_t requester, Byte* data_buf, SubsecondTime now);
          void processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
+         void processExReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
          void processInvRepFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg);
          void processNextReqFromL2Cache(IntPtr address);
          void handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg);
