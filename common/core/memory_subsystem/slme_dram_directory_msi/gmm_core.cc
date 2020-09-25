@@ -123,7 +123,7 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
    // Look up policy
    policy_id_t policy_id;
    uint64_t seg_id;
-   Sim()->getSegmentTable()->lookup(shmem_msg->getAddress(), policy_id, seg_id);
+   bool found = Sim()->getSegmentTable()->lookup(shmem_msg->getAddress(), policy_id, seg_id);
 
    if (policy_id != DIRECTORY_COHERENCE)
    {
@@ -226,7 +226,7 @@ GMMCore::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
 
          m_dram_queue_list->enqueue(va, shmem_req);
          MYLOG("ENqueued E REQ for address %lx", va );
-         if (m_tlb.count({va, va + 1}) == true && m_dram_queue_list->size(va) == 1)
+         if (m_tlb.count({va, va + 1}) && m_dram_queue_list->size(va) == 1)
          {
             processExReqFromL2Cache(shmem_req);
          }
@@ -245,7 +245,7 @@ GMMCore::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
 
          m_dram_queue_list->enqueue(va, shmem_req);
          MYLOG("ENqueued S REQ for address %lx", va );
-         if (m_tlb.count({va, va + 1}) == true && m_dram_queue_list->size(va) == 1)
+         if (m_tlb.count({va, va + 1}) && m_dram_queue_list->size(va) == 1)
          {
             processShReqFromL2Cache(shmem_req);
          }
@@ -305,8 +305,14 @@ GMMCore::handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
    {
       case ShmemMsg::TLB_INSERT:
       {
-         TLBEntry e = {shmem_msg->getAddress(), shmem_msg->getPhysAddress()};
-         m_tlb.insert(e);
+         uint64_t page_begin = shmem_msg->getAddress();
+         uint64_t page_end = shmem_msg->getPhysAddress();
+         uint64_t node = page_end >> 48;
+         page_end &= ((1UL << 48) - 1);
+         TLBEntry e = {page_begin, page_end};
+         LOG_ASSERT_ERROR(m_tlb.count(e) == 0, "");
+         m_tlb[e] = node;
+         LOG_PRINT_WARNING("Insert 0x%lx - 0x%lx -> %d", page_begin, page_end, node);
          for (auto it = m_dram_queue_list->begin(); it != m_dram_queue_list->end(); it ++)
          {
             if (e.contains(*it))
@@ -448,6 +454,7 @@ GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sende
          switch (policy)
          {
             case ATOMIC_SWAP:
+            case HASH_CAS:
             case ATOMIC_UPDATE:
             case SUBSCRIPTION:
                msg.type = ShmemMsg::ATOMIC_UPDATE_REQ;
@@ -462,6 +469,7 @@ GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sende
          switch (policy)
          {
             case ATOMIC_SWAP:
+            case HASH_CAS:
             case SUBSCRIPTION:
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
@@ -481,6 +489,7 @@ GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sende
                break;
             case REPLICATION:
             case ATOMIC_SWAP:
+            case HASH_CAS:
             case ATOMIC_UPDATE:
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
@@ -495,6 +504,7 @@ GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sende
          switch (policy)
          {
             case ATOMIC_SWAP:
+            case HASH_CAS:
                LOG_ASSERT_ERROR(shmem_msg->getMsgType() == ShmemMsg::DRAM_READ_REP, "Unrecognized message type.");
                msg.type = ShmemMsg::USER_CACHE_READ_REP;
                msg.payload[0] = shmem_msg->getAddress();
@@ -661,6 +671,25 @@ GMMCore::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    ShmemReq* shmem_req = m_dram_queue_list->front(address);
    updateShmemPerf(shmem_req);
 
+   ShmemMsg::msg_t req_msg_type = shmem_req->getShmemMsg()->getMsgType();
+   if (req_msg_type == ShmemMsg::USER_CACHE_READ_REQ)
+   {
+      policy_id_t policy_id;
+      uint64_t seg_id;
+      Sim()->getSegmentTable()->lookup(address, policy_id, seg_id);
+      LOG_ASSERT_ERROR(policy_id != DIRECTORY_COHERENCE, "Wrong place for directory coherence.");
+
+      Sift::GMMCoreMessage *core_msg = new Sift::GMMCoreMessage();
+      buildGMMCoreMessage(seg_id, policy_id, sender, shmem_msg, *core_msg);
+      LOG_ASSERT_ERROR(core_msg->policy != INVALID_POLICY, "Built invalid policy.");
+      enqueueMessage(core_msg);
+
+      // Process Next Request
+      processNextReqFromL2Cache(address);
+      MYLOG("End @ %lx", address);
+      return;
+   }
+
    //   Which reply type to use?
 
    ShmemMsg::msg_t reply_msg_type;
@@ -760,7 +789,10 @@ GMMCore::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
    // Remember that this request is waiting for data, and should not be woken up by voluntary invalidates
    shmem_req->setWaitForData(true);
 
-   core_id_t dram_node = m_core_id; // m_dram_controller_home_lookup->getHome(address);
+   // core_id_t dram_node = m_core_id; // m_dram_controller_home_lookup->getHome(address);
+
+   core_id_t dram_node = m_tlb[{address, address + 1}];
+   LOG_ASSERT_ERROR(dram_node >= (core_id_t)Sim()->getConfig()->getApplicationCores(), "");
 
    IntPtr phys_address = orig_shmem_msg->getPhysAddress();
    assert(phys_address != INVALID_ADDRESS);

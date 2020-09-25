@@ -2,6 +2,7 @@
 #include "atomic_swap.hpp"
 #include "atomic_writeadd.hpp"
 #include "replication.hpp"
+#include "hash_cas.hpp"
 
 int main()
 {
@@ -35,8 +36,11 @@ int main()
             if (msg.type == POLICY_INIT)
                 policies[msg.segid] = new AtomicSwap();
             ((AtomicSwap *)policies[msg.segid])->Exec(msg);
-
-            // atomic_swap_policy.Exec(msg);
+            break;
+         case 5 /*atomic_swap*/:
+            if (msg.type == POLICY_INIT)
+                policies[msg.segid] = new HashCAS();
+            ((HashCAS *)policies[msg.segid])->Exec(msg);
             break;
          default:
             break;

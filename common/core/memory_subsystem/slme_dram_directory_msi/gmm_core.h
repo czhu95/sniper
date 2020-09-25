@@ -11,7 +11,7 @@
 #include "req_queue_list.h"
 
 #include <deque>
-#include <set>
+#include <map>
 
 class AddressHomeLookup;
 class QueueModel;
@@ -82,7 +82,7 @@ namespace SingleLevelMemory
          Lock m_msg_queue_lock;
          ConditionVariable m_msg_cond;
 
-         std::set<TLBEntry> m_tlb;
+         std::map<TLBEntry, uint64_t> m_tlb;
 
          ReqQueueList* m_dram_queue_list;
 

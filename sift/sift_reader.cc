@@ -598,9 +598,9 @@ bool Sift::Reader::Read(Instruction &inst)
             }
             case RecOtherGMMUserMessage:
             {
-               // #if VERBOSE > 0
+               #if VERBOSE > 0
                std::cerr << "[DEBUG:" << m_id << "] Read GMMUserMessage" << std::endl;
-               // #endif
+               #endif
                assert(rec.Other.size == sizeof(GMMUserMessage));
                GMMUserMessage *msg = new GMMUserMessage();
                input->read(reinterpret_cast<char*>(msg), sizeof(GMMUserMessage));
@@ -867,7 +867,9 @@ const Sift::StaticInstruction* Sift::Reader::getStaticInstruction(uint64_t addr,
    else if (scache.count(addr))
    {
       sinst = scache[addr];
-      assert(sinst->size == size);
+      if (sinst->size != size)
+         std::cerr << "sinst->size != size, addr = 0x" << std::hex << addr << std::endl;
+      // assert(sinst->size == size);
    }
    else
    {

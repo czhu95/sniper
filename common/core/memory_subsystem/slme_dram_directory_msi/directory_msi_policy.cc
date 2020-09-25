@@ -9,6 +9,7 @@
 #include "directory_state.h"
 #include "thread_manager.h"
 #include "thread.h"
+#include "segment_table.h"
 
 #if 0
    extern Lock iolock;

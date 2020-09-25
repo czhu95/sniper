@@ -621,7 +621,7 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
    SingleLevelMemory::GlobalMemoryManager *mm = dynamic_cast<SingleLevelMemory::GlobalMemoryManager *>(getMemoryManager());
    LOG_ASSERT_ERROR(mm, "Cannot convert MemoryManager to GlobalMemoryManager");
    core_id_t gmm_core_id = Sim()->getSegmentTable()->get_home(msg->payload[0]); // mm->getGMMFromId(msg->payload[0] & (Sim()->getConfig()->getGMMCores() - 1));
-   if (gmm_core_id == INVALID_CORE_ID || gmm_core_id != Sim()->getSegmentTable()->get_home(msg->payload[1]))
+   if (gmm_core_id == INVALID_CORE_ID) // || gmm_core_id != Sim()->getSegmentTable()->get_home(msg->payload[1]))
    {
       LOG_PRINT_WARNING("Aborting user message payload1=0x%lx, payload2=0x%lx", msg->payload[0], msg->payload[1]);
       return makeMemoryResult(HitWhere::UNKNOWN, SubsecondTime::Zero());
@@ -642,7 +642,7 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
    }
 
    SubsecondTime shmem_time = final_time - initial_time;
-   LOG_PRINT_WARNING("GMMUserMessage addr=%lx, delay=%s, final=%s", msg->payload[0], itostr(shmem_time).c_str(), itostr(final_time).c_str());
+   // LOG_PRINT_WARNING("GMMUserMessage addr=%lx, delay=%s, final=%s", msg->payload[0], itostr(shmem_time).c_str(), itostr(final_time).c_str());
    // assert(shmem_time < SubsecondTime::US());
    return makeMemoryResult(HitWhere::UNKNOWN, shmem_time);
 }

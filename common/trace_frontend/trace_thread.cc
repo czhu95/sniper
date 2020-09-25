@@ -135,7 +135,7 @@ UInt64 TraceThread::va2pa(UInt64 va, bool *noMapping)
    if (m_trace_has_pa)
    {
       UInt64 pa = m_trace.va2pa(va);
-      LOG_ASSERT_ERROR(pa, "Cannot translate va: %p, thread id = %d", va, m_thread->getId());
+      LOG_ASSERT_WARNING(pa, "Cannot translate va: %p, thread id = %d", va, m_thread->getId());
 
       if (pa == 0)
       {
@@ -816,7 +816,7 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
       policy_id_t policy_id;
       uint64_t seg_id;
       Sim()->getSegmentTable()->lookup(mem_address, policy_id, seg_id);
-      if (policy_id == SUBSCRIPTION)
+      if (policy_id == HASH_CAS)
       {
          LOG_PRINT_WARNING("GMMUserMessage: type=10, addr=%lx", mem_address);
          Sift::GMMUserMessage *msg = new Sift::GMMUserMessage{10, mem_address, 0};
