@@ -18,12 +18,14 @@ class HashCAS : public Policy
    const uint64_t block_logsize = 20;
    const uint64_t block_size = 1UL << block_logsize;
    const uint64_t block_mask = ~(block_size - 1);
-   const uint64_t num_nodes = 4;
+   const uint64_t num_nodes = 8;
    const uint64_t app_cores = 32;
    const uint64_t shared_cores = app_cores / num_nodes;
-   const float mem_cap = 0.75;
+   const float mem_cap = 1.;
    // const int cache_nodes1[4] = {19, 18, 17, 16};
-   const int cache_nodes1[4] = {35, 34, 33, 32};
+   // const int cache_nodes1[4] = {35, 34, 33, 32};
+   const int cache_nodes1[8] = {39, 38, 37, 36, 35, 34, 33, 32};
+   // const int cache_nodes1[8] = {71, 70, 69, 68, 67, 66, 65, 64};
    // const int cache_nodes1[4] = {18, 19, 16, 17};
    // const int cache_nodes2[4] = {17, 16, 19, 18};
 

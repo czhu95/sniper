@@ -18,8 +18,8 @@ class AtomicSwap : public Policy
    const uint64_t block_logsize = 20;
    const uint64_t block_size = 1UL << block_logsize;
    const uint64_t block_mask = ~(block_size - 1);
-   const uint64_t num_nodes = 4;
-   const uint64_t app_cores = 16;
+   const uint64_t num_nodes = 8;
+   const uint64_t app_cores = 32;
    const uint64_t shared_cores = app_cores / num_nodes;
    const float mem_cap = 4. / num_nodes;
 
@@ -31,7 +31,7 @@ class AtomicSwap : public Policy
 
    int get_home(uint64_t block_num)
    {
-      return block_num & (num_nodes - 1) + app_cores;
+      return (block_num & (num_nodes - 1)) + app_cores;
    }
 
    struct swap_t
