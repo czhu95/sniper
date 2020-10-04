@@ -32,6 +32,7 @@ int main()
             if (msg.type == POLICY_INIT)
                 policies[msg.segid] = new AtomicWriteAdd();
             ((AtomicWriteAdd *)policies[msg.segid])->Exec(msg);
+            break;
          case 4 /*atomic_swap*/:
             if (msg.type == POLICY_INIT)
                 policies[msg.segid] = new AtomicSwap();

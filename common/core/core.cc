@@ -620,6 +620,9 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, now);
    SingleLevelMemory::GlobalMemoryManager *mm = dynamic_cast<SingleLevelMemory::GlobalMemoryManager *>(getMemoryManager());
    LOG_ASSERT_ERROR(mm, "Cannot convert MemoryManager to GlobalMemoryManager");
+   policy_id_t policy_id;
+   uint64_t seg_id;
+   Sim()->getSegmentTable()->lookup(msg->payload[0], policy_id, seg_id);
    core_id_t gmm_core_id = Sim()->getSegmentTable()->get_home(msg->payload[0]); // mm->getGMMFromId(msg->payload[0] & (Sim()->getConfig()->getGMMCores() - 1));
    if (gmm_core_id == INVALID_CORE_ID) // || gmm_core_id != Sim()->getSegmentTable()->get_home(msg->payload[1]))
    {
@@ -635,14 +638,14 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
          NULL, 0,
          HitWhere::UNKNOWN, &m_dummy_shmem_perf, ShmemPerfModel::_USER_THREAD);
 
-   if (msg->type == SingleLevelMemory::ShmemMsg::ATOMIC_UPDATE_REQ)
+   if (msg->type == SingleLevelMemory::ShmemMsg::ATOMIC_UPDATE_REQ && policy_id != ATOMIC_UPDATE)
    {
       m_gmm_sem.wait();
       final_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
    }
 
    SubsecondTime shmem_time = final_time - initial_time;
-   // LOG_PRINT_WARNING("GMMUserMessage addr=%lx, delay=%s, final=%s", msg->payload[0], itostr(shmem_time).c_str(), itostr(final_time).c_str());
+   LOG_PRINT_WARNING("GMMUserMessage addr=%lx, delay=%s, final=%s", msg->payload[0], itostr(shmem_time).c_str(), itostr(final_time).c_str());
    // assert(shmem_time < SubsecondTime::US());
    return makeMemoryResult(HitWhere::UNKNOWN, shmem_time);
 }

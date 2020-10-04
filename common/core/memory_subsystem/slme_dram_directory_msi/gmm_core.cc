@@ -471,6 +471,7 @@ GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sende
             case ATOMIC_SWAP:
             case HASH_CAS:
             case SUBSCRIPTION:
+            case ATOMIC_UPDATE:
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
                msg.payload[1] = shmem_msg->getPhysAddress();
@@ -726,10 +727,10 @@ GMMCore::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    if (hit_where == HitWhere::DRAM)
       hit_where = (getGlobalMemoryManager()->getUserFromId(sender) == getGlobalMemoryManager()->getUserFromId(shmem_msg->getRequester())) ? HitWhere::DRAM_LOCAL : HitWhere::DRAM_REMOTE;
 
-   if (hit_where == HitWhere::DRAM_REMOTE)
-   {
-      LOG_PRINT_WARNING("GMM Remote DRAM access: va = %p, %d->%d", address, sender, shmem_msg->getRequester());
-   }
+   // if (hit_where == HitWhere::DRAM_REMOTE)
+   // {
+   //    LOG_PRINT_WARNING("GMM Remote DRAM access: va = %p, %d->%d", address, sender, shmem_msg->getRequester());
+   // }
    // else
    // {
    //    LOG_PRINT_WARNING("Directory Policy: Local DRAM access: va = %p", address);

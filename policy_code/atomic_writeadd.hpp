@@ -12,6 +12,9 @@
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 
+#define BFS
+// #define PageRank
+
 class AtomicWriteAdd : public Policy
 {
    uint64_t start, end, length;
@@ -19,13 +22,25 @@ class AtomicWriteAdd : public Policy
    const uint64_t block_size = 1UL << block_logsize;
    const uint64_t block_mask = ~(block_size - 1);
    const uint64_t num_nodes = 4;
-   const uint64_t app_cores = 32;
-   const uint64_t shared_cores = app_cores / num_nodes;
+   const uint64_t app_cores = 16;
+   const float mem_cap = 4. / num_nodes;
+   const int cache_nodes[4] = {19, 18, 17, 16};
 
    bool *block_map; // [length / block_size + 1];
    uint64_t node_id = -1;
-   uint64_t checksum;
+   uint64_t cache_blocks = 0;
+   uint64_t max_cache_blocks = 0;
+#ifdef BFS
+   uint32_t *data;
+#endif
+#ifdef PageRank
    double *data;
+#endif
+
+   int get_home(uint64_t block_num)
+   {
+      return (block_num & (num_nodes - 1)) + app_cores;
+   }
 
 public:
    AtomicWriteAdd()
@@ -37,18 +52,27 @@ public:
       switch (msg.type)
       {
          case POLICY_INIT:
+         {
             node_id = msg.requester;
             start = msg.payload[0];
             end = msg.payload[1];
             length = end - start;
+            int num_blocks = length / block_size + 1;
+#ifdef BFS
+            data = new uint32_t[length / sizeof(double)];
+#endif
+#ifdef PageRank
             data = new double[length / sizeof(double)];
-            block_map = new bool[length / block_size + 1];
+#endif
+            max_cache_blocks = int(num_blocks * mem_cap);
+            block_map = new bool[num_blocks];
             for (int i = 0; i < length / block_size + 1; i ++)
                block_map[i] = false;
 
             SimGMMCoreMovType(GMM_CORE_DONE);
             SimGMMCoreMessage();
             break;
+         }
          case SH_REQ:
          {
             // msg.payload[0] = msg.payload[0] & ~((1UL << 20) - 1);
@@ -60,14 +84,20 @@ public:
             // printf("blocknum: %d\n", block_num);
             if (!block_map[block_num])
             {
+               int node = get_home(block_num);
+               if (cache_blocks < max_cache_blocks /* && cache_nodes[node_id - app_cores] == node */)
+               {
+                  cache_blocks ++;
+                  node = node_id;
+               }
                block_map[block_num] = true;
-
                SimGMMCoreMovType(TLB_INSERT);
                SimGMMCoreMovComponent(GMM_CORE);
                SimGMMCoreMovRecv(node_id);
 
                uint64_t seg_start = MAX(addr & block_mask, start);
                uint64_t seg_end = MIN((addr & block_mask) + block_size, end);
+               seg_end |= ((uint64_t)node << 48);
                SimGMMCoreMovPayload(seg_start, seg_end);
 
                SimGMMCoreMovPayload1(seg_start);
@@ -83,8 +113,15 @@ public:
          {
             // printf("[GMM Core: %d] received atomic update req swap %lx <-> %lx, requester = %d\n", node_id, msg.payload[0], msg.payload[1], msg.requester);
             uint64_t va = msg.payload[0];
+#ifdef BFS
+            uint64_t val = msg.payload[1];
+            if (data[(va - start) >> 3] != val)
+                data[(va - start) >> 3] = val;
+#endif
+#ifdef PageRank
             double addend = *((double *)&msg.payload[1]);
             data[(va - start) >> 3] += addend;
+#endif
             // SimGMMCoreMovType(ATOMIC_UPDATE_MSG);
             // SimGMMCoreMovComponent(GMM_CORE);
             // SimGMMCoreMessage();
