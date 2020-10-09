@@ -1581,7 +1581,7 @@ MYLOG("evict INV %lx", evict_address);
                   m_core_id /* requester */,
                   home_node_id /* receiver */,
                   evict_address,
-                  Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(evict_address),
+                  Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(address),
                   NULL, 0,
                   HitWhere::UNKNOWN, &m_dummy_shmem_perf, thread_num);
          }
@@ -2031,6 +2031,8 @@ MYLOG("processInvReqFromGMM l%d", m_mem_component);
       {
         MYLOG("invalidating something else than SHARED: %c ", CStateString(cstate));
       }
+
+      core_id_t owner = getCacheBlockInfo(address)->getOwner();
       //assert(cstate == CacheState::SHARED);
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD));
 
@@ -2046,7 +2048,7 @@ MYLOG("processInvReqFromGMM l%d", m_mem_component);
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
             address,
-            shmem_msg->getPhysAddress(),
+            Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(address),
             NULL, 0,
             HitWhere::UNKNOWN, shmem_msg->getPerf(), ShmemPerfModel::_SIM_THREAD);
    }
@@ -2075,6 +2077,7 @@ MYLOG("processFlushReqFromGMM l%d", m_mem_component);
    CacheState::cstate_t cstate = getCacheState(address);
    if (cstate != CacheState::INVALID)
    {
+      core_id_t owner = getCacheBlockInfo(address)->getOwner();
       //assert(cstate == CacheState::MODIFIED);
       shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD));
 
@@ -2092,7 +2095,8 @@ MYLOG("processFlushReqFromGMM l%d", m_mem_component);
             shmem_msg->getRequester() /* requester */,
             sender /* receiver */,
             address,
-            shmem_msg->getPhysAddress(),
+            Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(address),
+            // shmem_msg->getPhysAddress(),
             data_buf, getCacheBlockSize(),
             HitWhere::UNKNOWN, shmem_msg->getPerf(), ShmemPerfModel::_SIM_THREAD);
    }

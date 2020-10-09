@@ -398,6 +398,7 @@ DirectoryMSIPolicy::processNullifyReq(ShmemReq* shmem_req)
                      MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                      requester /* requester */,
                      address,
+                     shmem_req->getShmemMsg()->getPhysAddress(),
                      NULL, 0,
                      NULL,
                      ShmemPerfModel::_SIM_THREAD);
@@ -490,6 +491,7 @@ DirectoryMSIPolicy::processExReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_da
                   MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                   requester /* requester */,
                   address,
+                  shmem_req->getShmemMsg()->getPhysAddress(),
                   NULL, 0,
                   NULL, // No ShmemPerf on broadcast
                   ShmemPerfModel::_SIM_THREAD);
@@ -1051,6 +1053,7 @@ DirectoryMSIPolicy::processUpgradeReqFromL2Cache(ShmemReq* shmem_req, Byte* cach
                      MemComponent::GMM_CORE, MemComponent::L2_CACHE,
                      requester /* requester */,
                      address,
+                     shmem_req->getShmemMsg()->getPhysAddress(),
                      NULL, 0,
                      NULL, // No ShmemPerf on broadcast
                      ShmemPerfModel::_SIM_THREAD);
