@@ -1581,7 +1581,7 @@ MYLOG("evict INV %lx", evict_address);
                   m_core_id /* requester */,
                   home_node_id /* receiver */,
                   evict_address,
-                  Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(address),
+                  Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(evict_address),
                   NULL, 0,
                   HitWhere::UNKNOWN, &m_dummy_shmem_perf, thread_num);
          }
