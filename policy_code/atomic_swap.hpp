@@ -139,6 +139,11 @@ public:
                //        msg.type, msg.payload[0], msg.payload[1]);
                SimGMMCoreMessage();
             }
+            else
+            {
+               SimGMMCoreMovType(GMM_CORE_DONE);
+               SimGMMCoreMessage();
+            }
             break;
          }
          case ATOMIC_UPDATE_REQ:

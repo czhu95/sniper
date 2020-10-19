@@ -352,7 +352,7 @@ LOG_ASSERT_ERROR(offset + data_length <= getCacheBlockSize(), "access until %u >
       return hit_where;
    }
 
-   if ((policy == SUBSCRIPTION || policy == ATOMIC_SWAP || policy == HASH_CAS) && mem_op_type == Core::WRITE)
+   if ((policy == SUBSCRIPTION || policy == ATOMIC_SWAP || policy == HASH_CAS || policy == ATOMIC_UPDATE) && mem_op_type == Core::WRITE)
    {
       // LOG_PRINT_WARNING("Subsription policy handles %lx", ca_address);
       hit_where = (HitWhere::where_t)m_mem_component;

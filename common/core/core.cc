@@ -645,8 +645,8 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
    }
 
    SubsecondTime shmem_time = final_time - initial_time;
-   LOG_PRINT_WARNING("GMMUserMessage addr=%lx, delay=%s, final=%s", msg->payload[0], itostr(shmem_time).c_str(), itostr(final_time).c_str());
-   // assert(shmem_time < SubsecondTime::US());
+   LOG_PRINT_WARNING("GMMUserMessage addr=%lx, delay=%s, initial=%s, final=%s", msg->payload[0], itostr(shmem_time).c_str(), itostr(initial_time), itostr(final_time).c_str());
+   assert(shmem_time < SubsecondTime::MS(1));
    return makeMemoryResult(HitWhere::UNKNOWN, shmem_time);
 }
 

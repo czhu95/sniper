@@ -6,7 +6,7 @@
 
 int main()
 {
-   Policy *policies[16] = {NULL};
+   Policy *policies[64] = {NULL};
    // AtomicSwap atomic_swap_policy;
    // Replication replication_policy;
    GMMCoreMessage msg;

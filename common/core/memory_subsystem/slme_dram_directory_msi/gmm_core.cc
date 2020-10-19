@@ -24,6 +24,7 @@
 #include "instruction.h"
 #include "thread.h"
 #include "queue_model_history_list.h"
+#include "gmm_mem_policy.h"
 
 #if 0
    extern Lock iolock;
@@ -97,28 +98,60 @@ GMMCore::GMMCore(SInt32 id)
                dram_directory_cache_access_time,
                m_shmem_perf_model);
 
+   m_gmm_policy = new GMMMemPolicy(getId(),
+               m_global_memory_manager,
+               m_memory_manager->getCacheBlockSize(),
+               m_shmem_perf_model);
+
+
    m_dram_queue_list = new ReqQueueList();
 
-   m_queue_model = QueueModel::create("GMM Core", m_core_id, "history_list", *global_domain);
+   m_gmm_cores = Sim()->getCfg()->getInt("perf_model/gmm/core/threads");
+
+   for (int i = 0; i < m_gmm_cores; i ++)
+      m_queue_models.push_back(QueueModel::create(("GMM Core " + std::to_string(i)).c_str(), m_core_id, "history_list", *global_domain));
 }
 
 GMMCore::~GMMCore()
 {
    delete m_dram_controller_home_lookup;
    delete m_dram_queue_list;
-   delete m_queue_model;
+   delete m_directory_policy;
+   delete m_gmm_policy;
+   for (auto queue_model : m_queue_models)
+      delete queue_model;
 }
 
 void
 GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
 {
    IntPtr address = shmem_msg->getAddress();
+   core_id_t requester = shmem_msg->getRequester();
 
    MYLOG("begin for address %lx, %d in queue", address, m_dram_queue_list->size(address));
    updateShmemPerf(shmem_msg, ShmemPerf::TD_ACCESS);
 
    // Look up line in segment table
    // bool slb_hit = false;
+
+   MemComponent::component_t sender_mem_component = shmem_msg->getSenderMemComponent();
+   if (requester == m_core_id)
+   {
+      switch(sender_mem_component)
+      {
+         case MemComponent::LAST_LEVEL_CACHE:
+            m_gmm_policy->handleMsgFromL2Cache(sender, shmem_msg);
+            break;
+         case MemComponent::DRAM:
+            m_gmm_policy->handleMsgFromDRAM(sender, shmem_msg);
+            break;
+         default:
+            LOG_PRINT_ERROR("Unrecognized sender component(%u)",
+            sender_mem_component);
+            break;
+      }
+      return;
+   }
 
    // Look up policy
    policy_id_t policy_id;
@@ -127,8 +160,6 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
 
    if (policy_id != DIRECTORY_COHERENCE)
    {
-      MemComponent::component_t sender_mem_component = shmem_msg->getSenderMemComponent();
-
       switch(sender_mem_component)
       {
          case MemComponent::LAST_LEVEL_CACHE:
@@ -169,8 +200,6 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
    }
    else
    {
-      MemComponent::component_t sender_mem_component = shmem_msg->getSenderMemComponent();
-
       switch(sender_mem_component)
       {
          case MemComponent::LAST_LEVEL_CACHE:
@@ -851,7 +880,7 @@ GMMCore::handleGMMCorePull(SubsecondTime now)
    assert(!m_dequeued_msg_time.empty());
    m_msg_time = m_dequeued_msg_time.front();
    m_dequeued_msg_time.pop_front();
-   if (m_msg_time > now)
+   // if (m_msg_time > now)
       m_dequeue_time = now;
    // LOG_PRINT_WARNING("[%d]dequeue time: %s", m_core_id, itostr(m_msg_time).c_str());
 }
@@ -861,7 +890,8 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
 {
    assert(now >= m_dequeue_time);
    SubsecondTime process_time = now - m_dequeue_time;
-   SubsecondTime queue_delay = m_queue_model->computeQueueDelay(m_msg_time, process_time);
+   int queue_model_id = msg->requester % m_gmm_cores;
+   SubsecondTime queue_delay = m_queue_models[queue_model_id]->computeQueueDelay(m_msg_time, process_time);
    // if (queue_delay > SubsecondTime::NS(100))
    //    LOG_PRINT_WARNING("Queue delay too long.");
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, m_msg_time + process_time + queue_delay);
@@ -870,6 +900,7 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
    // LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d, addr=%lx, process=%s, queue_delay=%s",
    //                   m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(),
    //                   msg->type, msg->payload[0], itostr(process_time).c_str(), itostr(queue_delay).c_str());
+   m_dequeue_time = now;
 
    switch (msg->type)
    {

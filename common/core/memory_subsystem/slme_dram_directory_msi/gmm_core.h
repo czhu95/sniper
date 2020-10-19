@@ -24,6 +24,7 @@ namespace Sift
 namespace SingleLevelMemory
 {
    class DirectoryMSIPolicy;
+   class GMMMemPolicy;
    class PolicyBase;
    class ShmemMsg;
    class GlobalMemoryManager;
@@ -74,6 +75,7 @@ namespace SingleLevelMemory
 
       protected:
          DirectoryMSIPolicy* m_directory_policy;
+         GMMMemPolicy* m_gmm_policy;
          AddressHomeLookup *m_dram_controller_home_lookup;
 
          GlobalMemoryManager *m_global_memory_manager;
@@ -86,7 +88,8 @@ namespace SingleLevelMemory
 
          ReqQueueList* m_dram_queue_list;
 
-         QueueModel* m_queue_model;
+         int m_gmm_cores;
+         std::vector<QueueModel*> m_queue_models;
          SubsecondTime m_dequeue_time;
          std::deque<SubsecondTime> m_dequeued_msg_time;
          SubsecondTime m_msg_time;

@@ -924,6 +924,11 @@ bool RobSmtTimer::tryIssue(smtthread_id_t thread_num, SubsecondTime &next_event,
       RobEntry *entry = &thread->rob.at(i);
       DynamicMicroOp *uop = entry->uop;
 
+      if (uop->getMicroOp()->isGMMUser() && entry->done != SubsecondTime::MaxTime() && entry->done > now)
+      {
+         thread_next_event = std::min(thread_next_event, entry->done);
+         break;
+      }
 
       if (entry->done != SubsecondTime::MaxTime())
       {
