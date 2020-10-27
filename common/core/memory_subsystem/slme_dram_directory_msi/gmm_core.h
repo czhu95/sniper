@@ -72,6 +72,8 @@ namespace SingleLevelMemory
 
          void signalStop();
          void policyInit(int seg_id, int policy_id, uint64_t start, uint64_t end);
+         bool isIdle();
+         SubsecondTime getLastMsgTime() { return m_last_msg_time; }
 
       protected:
          DirectoryMSIPolicy* m_directory_policy;
@@ -93,7 +95,10 @@ namespace SingleLevelMemory
          SubsecondTime m_dequeue_time;
          std::deque<SubsecondTime> m_dequeued_msg_time;
          SubsecondTime m_msg_time;
+         SubsecondTime m_last_msg_time;
          int m_num_pending_core_msg;
+
+         core_id_t m_sync_core_id;
 
          GlobalMemoryManager* getGlobalMemoryManager() { return m_global_memory_manager; }
 
@@ -127,6 +132,8 @@ namespace SingleLevelMemory
          void handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg);
          void handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg);
 
+         void handleGMMUserSync(core_id_t requester);
+         // void signalGMMSynced(SubsecondTime now);
 
          void hookPeriodicInsCheck() override {};
          void hookPeriodicInsCall() override {};

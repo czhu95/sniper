@@ -119,6 +119,7 @@ namespace SingleLevelMemory
          case ATOMIC_UPDATE_MSG:
          case ATOMIC_UPDATE_REP:
          case ATOMIC_UPDATE_DONE:
+         case GMM_USER_SYNC:
             // msg_type + address + cache_block
             return (1 + sizeof(IntPtr) + m_data_length);
 

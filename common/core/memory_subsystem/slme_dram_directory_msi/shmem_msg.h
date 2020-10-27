@@ -59,7 +59,9 @@ namespace SingleLevelMemory
             GMM_USER_DONE,
             GMM_CORE_DONE,
 
-            MAX_MSG_TYPE = GMM_CORE_DONE,
+            GMM_USER_SYNC,
+
+            MAX_MSG_TYPE = GMM_USER_SYNC,
             NUM_MSG_TYPES = MAX_MSG_TYPE - MIN_MSG_TYPE + 1
          };
 

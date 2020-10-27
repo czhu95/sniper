@@ -18,7 +18,7 @@
 #include "cheetah_manager.h"
 #include "sift_format.h"
 #include "segment_table.h"
-
+#include "gmm_core.h"
 #include "global_memory_manager.h"
 
 #include <cstring>
@@ -620,33 +620,82 @@ Core::handleGMMUserMessage(Sift::GMMUserMessage *msg, SubsecondTime now)
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, now);
    SingleLevelMemory::GlobalMemoryManager *mm = dynamic_cast<SingleLevelMemory::GlobalMemoryManager *>(getMemoryManager());
    LOG_ASSERT_ERROR(mm, "Cannot convert MemoryManager to GlobalMemoryManager");
-   policy_id_t policy_id;
-   uint64_t seg_id;
-   Sim()->getSegmentTable()->lookup(msg->payload[0], policy_id, seg_id);
-   core_id_t gmm_core_id = Sim()->getSegmentTable()->get_home(msg->payload[0]); // mm->getGMMFromId(msg->payload[0] & (Sim()->getConfig()->getGMMCores() - 1));
-   if (gmm_core_id == INVALID_CORE_ID) // || gmm_core_id != Sim()->getSegmentTable()->get_home(msg->payload[1]))
-   {
-      LOG_PRINT_WARNING("Aborting user message payload1=0x%lx, payload2=0x%lx", msg->payload[0], msg->payload[1]);
-      return makeMemoryResult(HitWhere::UNKNOWN, SubsecondTime::Zero());
-   }
-   mm->sendMsg(static_cast<SingleLevelMemory::ShmemMsg::msg_t>(msg->type),
-         MemComponent::CORE, MemComponent::GMM_CORE,
-         m_core_id,
-         gmm_core_id,
-         msg->payload[0],
-         msg->payload[1],
-         NULL, 0,
-         HitWhere::UNKNOWN, &m_dummy_shmem_perf, ShmemPerfModel::_USER_THREAD);
 
-   if (msg->type == SingleLevelMemory::ShmemMsg::ATOMIC_UPDATE_REQ && policy_id != ATOMIC_UPDATE)
+   if (msg->type == SingleLevelMemory::ShmemMsg::GMM_USER_SYNC)
    {
-      m_gmm_sem.wait();
-      final_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
+      bool all_gmms_idle = true;
+      SubsecondTime gmm_done_time = initial_time;
+      for (core_id_t core_id = (core_id_t)Sim()->getConfig()->getApplicationCores();
+           core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); core_id ++)
+      {
+         all_gmms_idle &= Sim()->getGMMCoreManager()->getGMMCoreFromID(core_id)->isIdle();
+         gmm_done_time = std::max(gmm_done_time, Sim()->getGMMCoreManager()->getGMMCoreFromID(core_id)->getLastMsgTime());
+      }
+      if (!all_gmms_idle)
+      {
+         LOG_PRINT_WARNING("All GMM cores not idle.");
+         core_id_t gmm_core_id = mm->getGMMFromId(m_core_id);
+         mm->sendMsg(static_cast<SingleLevelMemory::ShmemMsg::msg_t>(msg->type),
+               MemComponent::CORE, MemComponent::GMM_CORE,
+               m_core_id,
+               gmm_core_id,
+               msg->payload[0],
+               msg->payload[1],
+               NULL, 0,
+               HitWhere::UNKNOWN, &m_dummy_shmem_perf, ShmemPerfModel::_USER_THREAD);
+
+         m_gmm_sem.wait();
+         final_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
+      }
+      else
+      {
+         final_time = gmm_done_time;
+      }
+
+      // if (msg->type == SingleLevelMemory::ShmemMsg::ATOMIC_UPDATE_REQ) // && policy_id != ATOMIC_UPDATE)
+      // {
+      // }
+   }
+   else
+   {
+      policy_id_t policy_id;
+      uint64_t seg_id;
+      Sim()->getSegmentTable()->lookup(msg->payload[0], policy_id, seg_id);
+      core_id_t gmm_core_id = Sim()->getSegmentTable()->get_home(msg->payload[0]); // mm->getGMMFromId(msg->payload[0] & (Sim()->getConfig()->getGMMCores() - 1));
+      if (gmm_core_id == INVALID_CORE_ID) // || gmm_core_id != Sim()->getSegmentTable()->get_home(msg->payload[1]))
+      {
+         LOG_PRINT_WARNING("Aborting user message payload1=0x%lx, payload2=0x%lx", msg->payload[0], msg->payload[1]);
+         return makeMemoryResult(HitWhere::UNKNOWN, SubsecondTime::Zero());
+      }
+      if (policy_id == ATOMIC_SWAP && gmm_core_id != Sim()->getSegmentTable()->get_home(msg->payload[1]))
+      {
+         LOG_PRINT_WARNING("Aborting user message payload1=0x%lx, payload2=0x%lx", msg->payload[0], msg->payload[1]);
+         return makeMemoryResult(HitWhere::UNKNOWN, SubsecondTime::Zero());
+      }
+      mm->sendMsg(static_cast<SingleLevelMemory::ShmemMsg::msg_t>(msg->type),
+            MemComponent::CORE, MemComponent::GMM_CORE,
+            m_core_id,
+            gmm_core_id,
+            msg->payload[0],
+            msg->payload[1],
+            NULL, 0,
+            HitWhere::UNKNOWN, &m_dummy_shmem_perf, ShmemPerfModel::_USER_THREAD);
+
+      if (msg->type == SingleLevelMemory::ShmemMsg::ATOMIC_UPDATE_REQ && policy_id != ATOMIC_UPDATE)
+      {
+         m_gmm_sem.wait();
+         final_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
+      }
    }
 
    SubsecondTime shmem_time = final_time - initial_time;
-   LOG_PRINT_WARNING("GMMUserMessage addr=%lx, delay=%s, initial=%s, final=%s", msg->payload[0], itostr(shmem_time).c_str(), itostr(initial_time), itostr(final_time).c_str());
-   assert(shmem_time < SubsecondTime::MS(1));
+   LOG_PRINT_WARNING("GMMUserMessage addr=%lx, delay=%s, initial=%s, final=%s", msg->payload[0], itostr(shmem_time).c_str(), itostr(initial_time).c_str(), itostr(final_time).c_str());
+   if (shmem_time > SubsecondTime::US(10))
+   {
+      LOG_PRINT_WARNING("GMM user msg taking too long");
+      shmem_time = SubsecondTime::Zero();
+   }
+   // assert(shmem_time < SubsecondTime::MS(1));
    return makeMemoryResult(HitWhere::UNKNOWN, shmem_time);
 }
 

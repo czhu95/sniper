@@ -110,6 +110,8 @@ GMMCore::GMMCore(SInt32 id)
 
    for (int i = 0; i < m_gmm_cores; i ++)
       m_queue_models.push_back(QueueModel::create(("GMM Core " + std::to_string(i)).c_str(), m_core_id, "history_list", *global_domain));
+
+   m_sync_core_id = INVALID_CORE_ID;
 }
 
 GMMCore::~GMMCore()
@@ -133,6 +135,11 @@ GMMCore::handleMsgFromNetwork(core_id_t sender, ShmemMsg* shmem_msg)
 
    // Look up line in segment table
    // bool slb_hit = false;
+   if (shmem_msg->getMsgType() == ShmemMsg::GMM_USER_SYNC)
+   {
+      handleGMMUserSync(requester);
+      return;
+   }
 
    MemComponent::component_t sender_mem_component = shmem_msg->getSenderMemComponent();
    if (requester == m_core_id)
@@ -881,7 +888,7 @@ GMMCore::handleGMMCorePull(SubsecondTime now)
    m_msg_time = m_dequeued_msg_time.front();
    m_dequeued_msg_time.pop_front();
    // if (m_msg_time > now)
-      m_dequeue_time = now;
+   // m_dequeue_time = now;
    // LOG_PRINT_WARNING("[%d]dequeue time: %s", m_core_id, itostr(m_msg_time).c_str());
 }
 
@@ -891,12 +898,16 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
    assert(now >= m_dequeue_time);
    SubsecondTime process_time = now - m_dequeue_time;
    int queue_model_id = msg->requester % m_gmm_cores;
+   if (process_time > SubsecondTime::US(10))
+      LOG_ASSERT_WARNING(process_time < SubsecondTime::US(10), "process taking too long");
    SubsecondTime queue_delay = m_queue_models[queue_model_id]->computeQueueDelay(m_msg_time, process_time);
    // if (queue_delay > SubsecondTime::NS(100))
    //    LOG_PRINT_WARNING("Queue delay too long.");
+   SubsecondTime gmm_now = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, m_msg_time + process_time + queue_delay);
 
    m_msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
+   m_last_msg_time = m_msg_time;
    // LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d, addr=%lx, process=%s, queue_delay=%s",
    //                   m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(),
    //                   msg->type, msg->payload[0], itostr(process_time).c_str(), itostr(queue_delay).c_str());
@@ -957,6 +968,41 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
                ShmemPerfModel::_USER_THREAD);
          break;
       case ShmemMsg::GMM_CORE_DONE:
+      {
+         bool all_gmms_idle = true;
+         for (core_id_t core_id = (core_id_t)Sim()->getConfig()->getApplicationCores();
+              core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); core_id ++)
+         {
+            all_gmms_idle &= Sim()->getGMMCoreManager()->getGMMCoreFromID(core_id)->isIdle();
+         }
+         if (all_gmms_idle)
+         {
+            for (core_id_t core_id = (core_id_t)Sim()->getConfig()->getApplicationCores();
+                 core_id < (core_id_t)Sim()->getConfig()->getTotalCores(); core_id ++)
+            {
+               GMMCore *gmm_core = Sim()->getGMMCoreManager()->getGMMCoreFromID(core_id);
+               if (gmm_core->m_sync_core_id != INVALID_CORE_ID)
+               {
+                  getGlobalMemoryManager()->sendMsg(ShmemMsg::GMM_USER_DONE,
+                        MemComponent::GMM_CORE, MemComponent::CORE,
+                        gmm_core->m_sync_core_id /* requester */,
+                        gmm_core->m_sync_core_id /* receiver */,
+                        0,
+                        0,
+                        NULL, 0,
+                        HitWhere::UNKNOWN,
+                        &m_dummy_shmem_perf,
+                        ShmemPerfModel::_USER_THREAD);
+                  gmm_core->m_sync_core_id = INVALID_CORE_ID;
+               }
+            }
+         }
+         else
+         {
+            // LOG_PRINT_WARNING("All GMM cores not idle.");
+         }
+         break;
+      }
       case ShmemMsg::USER_CACHE_WRITE_REQ:
          break;
       // case TLB_INSERT:
@@ -1000,6 +1046,9 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
       default:
          LOG_PRINT_ERROR("Unrecognized Shmem Msg Type: %u", msg->type);
    }
+
+   getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, gmm_now);
+
 }
 
 void
@@ -1023,6 +1072,18 @@ GMMCore::signalStop()
    m_msg_queue.clear();
    m_msg_cond.signal();
    m_msg_queue_lock.release();
+}
+
+void
+GMMCore::handleGMMUserSync(core_id_t requester)
+{
+   m_sync_core_id = requester;
+}
+
+bool
+GMMCore::isIdle()
+{
+   return m_msg_queue.empty();
 }
 
 }
