@@ -3,6 +3,7 @@
 #include "atomic_writeadd.hpp"
 #include "replication.hpp"
 #include "hash_cas.hpp"
+#include "migration.hpp"
 
 int main()
 {
@@ -42,6 +43,11 @@ int main()
             if (msg.type == POLICY_INIT)
                 policies[msg.segid] = new HashCAS();
             ((HashCAS *)policies[msg.segid])->Exec(msg);
+            break;
+         case 6 /*migration*/:
+            if (msg.type == POLICY_INIT)
+                policies[msg.segid] = new Migration();
+            ((Migration *)policies[msg.segid])->Exec(msg);
             break;
          default:
             break;
