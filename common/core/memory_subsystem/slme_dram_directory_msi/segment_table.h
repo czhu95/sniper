@@ -14,6 +14,7 @@ typedef int32_t policy_id_t;
 #define SUBSCRIPTION        3
 #define ATOMIC_SWAP         4
 #define HASH_CAS            5
+#define MIGRATION           6
 
 namespace SingleLevelMemory
 {

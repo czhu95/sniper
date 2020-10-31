@@ -254,7 +254,7 @@ GMMCore::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
          policy_id_t policy_id;
          uint64_t seg_id;
          Sim()->getSegmentTable()->lookup(va, policy_id, seg_id);
-         LOG_ASSERT_ERROR(policy_id == ATOMIC_UPDATE, "EX_REQ unacceptable for policy %d", policy_id);
+         LOG_ASSERT_ERROR(policy_id == ATOMIC_UPDATE || policy_id == MIGRATION, "EX_REQ unacceptable for policy %d", policy_id);
          // LOG_ASSERT_WARNING((policy_id - 9) / 4 == m_core_id - 16, "Policy %d written by %d", policy_id - 9, m_core_id - 16);
 
          // Add request onto a queue
@@ -492,6 +492,7 @@ GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sende
             case ATOMIC_SWAP:
             case HASH_CAS:
             case ATOMIC_UPDATE:
+            case MIGRATION:
             case SUBSCRIPTION:
                msg.type = ShmemMsg::ATOMIC_UPDATE_REQ;
                msg.payload[0] = shmem_msg->getAddress();
@@ -508,6 +509,7 @@ GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sende
             case HASH_CAS:
             case SUBSCRIPTION:
             case ATOMIC_UPDATE:
+            case MIGRATION:
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
                msg.payload[1] = shmem_msg->getPhysAddress();
@@ -528,6 +530,7 @@ GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sende
             case ATOMIC_SWAP:
             case HASH_CAS:
             case ATOMIC_UPDATE:
+            case MIGRATION:
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
                if (shmem_msg->getMsgType() == ShmemMsg::INV_REP)
@@ -742,7 +745,7 @@ GMMCore::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
          reply_msg_type = ShmemMsg::EX_REP;
          break;
       case ShmemMsg::SH_REQ:
-         reply_msg_type = policy_id == ATOMIC_UPDATE ? ShmemMsg::EX_REP : ShmemMsg::SH_REP;
+         reply_msg_type = policy_id == ATOMIC_UPDATE || policy_id == MIGRATION ? ShmemMsg::EX_REP : ShmemMsg::SH_REP;
          break;
       // case ShmemMsg::EX_REQ:
       //    reply_msg_type = ShmemMsg::EX_REP;
