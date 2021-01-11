@@ -48,6 +48,8 @@ SegmentTable::command(uint64_t cmd_type, IntPtr start, uint64_t arg1)
       create(start, arg1);
    else if (cmd_type == 1)
       assign(start, arg1);
+   else if (cmd_type == 2)
+      undefine(start);
 }
 
 void
@@ -56,12 +58,28 @@ SegmentTable::create(IntPtr start, uint64_t length)
    Segment new_seg{m_next_segment_id ++, start, start + length};
    m_lock.acquire();
 
-   LOG_ASSERT_ERROR(m_table.count(new_seg) == 0, "Segment overlapped.");
+   while (m_table.count(new_seg))
+   {
+      LOG_PRINT_WARNING("Segment overlapped.");
+      m_table.erase(new_seg);
+   }
 
    m_table[new_seg] = DIRECTORY_COHERENCE;
    m_lock.release();
 
    LOG_PRINT_WARNING("Created segment: [%d] %p - %p", new_seg.m_segment_id, (void *)new_seg.m_start, (void *)new_seg.m_end);
+}
+
+void
+SegmentTable::undefine(IntPtr start)
+{
+   m_table.erase({0, start, start + 1});
+   auto it = m_table.find({0, start, start + 1});
+   if (it != m_table.end())
+   {
+      LOG_PRINT_WARNING("Deleted segment: [%d] %p - %d", it->first.m_segment_id, (void *)it->first.m_start);
+      m_table.erase(it);
+   }
 }
 
 void

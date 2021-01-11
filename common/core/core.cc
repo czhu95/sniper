@@ -422,10 +422,14 @@ Core::initiateMemoryAccess(MemComponent::component_t mem_component,
 
    // Get the final cycle time
    SubsecondTime final_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
-   LOG_ASSERT_ERROR(final_time >= initial_time,
-         "final_time(%s) < initial_time(%s)",
-         itostr(final_time).c_str(),
-         itostr(initial_time).c_str());
+   if (final_time < initial_time)
+   {
+      LOG_ASSERT_WARNING(final_time >= initial_time,
+           "final_time(%s) < initial_time(%s)",
+           itostr(final_time).c_str(),
+           itostr(initial_time).c_str());
+      final_time = initial_time;
+   }
 
    LOG_PRINT("Time(%s), %s - ADDR(0x%x), data_size(%u), END\n",
         itostr(final_time).c_str(),
@@ -437,6 +441,8 @@ Core::initiateMemoryAccess(MemComponent::component_t mem_component,
 
    // Calculate the round-trip time
    SubsecondTime shmem_time = final_time - initial_time;
+
+   LOG_ASSERT_ERROR(m_core_id < 32 || shmem_time < SubsecondTime::US(10), "Mem taking too long.");
 
    switch(modeled)
    {

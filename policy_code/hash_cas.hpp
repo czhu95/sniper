@@ -18,7 +18,7 @@ class HashCAS : public Policy
    const uint64_t block_logsize = 20;
    const uint64_t block_size = 1UL << block_logsize;
    const uint64_t block_mask = ~(block_size - 1);
-   const uint64_t num_nodes = 8;
+   const uint64_t num_nodes = 2;
    const uint64_t app_cores = 32;
    const uint64_t shared_cores = app_cores / num_nodes;
    const float mem_cap = 1.;
@@ -82,31 +82,31 @@ public:
             {
                int node = get_home(block_num);
                // printf("node id: %d", node);
-               if (mem_cap <= .25)
-               {
-                  if (cache_blocks < max_cache_blocks && cache_nodes1[node_id - app_cores] == node)
-                  {
-                     cache_blocks ++;
-                     node = node_id;
-                  }
-               }
-               else
-               {
-                  if (cache_nodes1[node_id - app_cores] == node)
-                  {
-                     node = node_id;
-                  }
-                  else if (cache_blocks < max_cache_blocks && node != node_id)
-                  {
-                     cache_blocks ++;
-                     node = node_id;
-                  }
-               }
-               // if (cache_blocks < max_cache_blocks && node != node_id)
+               // if (mem_cap <= .25)
                // {
-               //    cache_blocks ++;
-               //    node = node_id;
+               //    if (cache_blocks < max_cache_blocks && cache_nodes1[node_id - app_cores] == node)
+               //    {
+               //       cache_blocks ++;
+               //       node = node_id;
+               //    }
                // }
+               // else
+               // {
+               //    if (cache_nodes1[node_id - app_cores] == node)
+               //    {
+               //       node = node_id;
+               //    }
+               //    else if (cache_blocks < max_cache_blocks && node != node_id)
+               //    {
+               //       cache_blocks ++;
+               //       node = node_id;
+               //    }
+               // }
+               // if (cache_blocks < max_cache_blocks && node != node_id)
+               {
+                  cache_blocks ++;
+                  node = node_id;
+               }
                block_map[block_num] = true;
                SimGMMCoreMovType(TLB_INSERT);
                SimGMMCoreMovComponent(GMM_CORE);

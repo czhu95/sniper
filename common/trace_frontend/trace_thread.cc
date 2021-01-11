@@ -1085,7 +1085,7 @@ void TraceThread::handleAccessMemory(Core::lock_signal_t lock_signal, Core::mem_
 
 void TraceThread::handleGMMCmdFunc(uint64_t cmd, IntPtr start, uint64_t arg1)
 {
-   if (cmd == 0 || cmd == 1)
+   if (cmd == 0 || cmd == 1 || cmd == 2)
    {
       Sim()->getSegmentTable()->command(cmd, start, arg1);
    }

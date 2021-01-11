@@ -31,13 +31,17 @@ RobTimer::RobTimer(
          int dispatch_width,
          int window_size)
       : dispatchWidth(dispatch_width)
-      , commitWidth(Sim()->getCfg()->getIntArray("perf_model/core/rob_timer/commit_width", core->getId()))
+      , commitWidth(core->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
+                       Sim()->getCfg()->getIntArray("perf_model/core/rob_timer/commit_width", core->getId()) :
+                       Sim()->getCfg()->getIntArray("perf_model/gmm/core/rob_timer/commit_width", core->getId()))
       , windowSize(window_size) // windowSize = ROB length = 96 for Core2
       , rsEntries(Sim()->getCfg()->getIntArray("perf_model/core/rob_timer/rs_entries", core->getId()))
       , misprediction_penalty(misprediction_penalty)
       , m_store_to_load_forwarding(Sim()->getCfg()->getBoolArray("perf_model/core/rob_timer/store_to_load_forwarding", core->getId()))
       , m_no_address_disambiguation(!Sim()->getCfg()->getBoolArray("perf_model/core/rob_timer/address_disambiguation", core->getId()))
-      , inorder(Sim()->getCfg()->getBoolArray("perf_model/core/rob_timer/in_order", core->getId()))
+      , inorder(core->getId() < (core_id_t)Sim()->getConfig()->getApplicationCores() ?
+                   Sim()->getCfg()->getBoolArray("perf_model/core/rob_timer/in_order", core->getId()) :
+                   false)
       , m_core(core)
       , rob(window_size + 255)
       , m_num_in_rob(0)

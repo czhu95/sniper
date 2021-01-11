@@ -20,8 +20,8 @@ class Replication : public Policy
    const uint64_t block_mask = ~(block_size - 1);
    const uint64_t num_nodes = 4;
    const uint64_t app_cores = 32;
-   const float mem_cap = 0.00;
-   const int cache_nodes1[4] = {19, 18, 17, 16};
+   const float mem_cap = 1.;
+   const int cache_nodes1[4] = {35, 34, 33, 32};
 
    bool *block_map;
    uint64_t node_id = -1;
@@ -46,6 +46,7 @@ public:
             length = end - start;
             int num_blocks = length / block_size + 1;
             max_cache_blocks = int(num_blocks * (mem_cap > .25 ? mem_cap - .25 : mem_cap));
+            // max_cache_blocks = int(num_blocks * mem_cap);
             block_map = new bool[num_blocks];
             for (int i = 0; i < length / block_size + 1; i ++)
                block_map[i] = false;
@@ -65,34 +66,35 @@ public:
             // printf("blocknum: %d\n", block_num);
             if (!block_map[block_num])
             {
-               int node = get_home(block_num);
+               // int node = get_home(block_num);
+               int node = app_cores;
                // printf("node id: %d", node);
-               if (mem_cap <= .25)
-               {
-                  if (cache_blocks < max_cache_blocks && cache_nodes1[node_id - app_cores] == node)
-                  {
-                     cache_blocks ++;
-                     node = node_id;
-                  }
-               }
-               else
-               {
-                  if (cache_nodes1[node_id - app_cores] == node)
-                  {
-                     node = node_id;
-                  }
-                  else if (cache_blocks < max_cache_blocks && node != node_id)
-                  {
-                     cache_blocks ++;
-                     node = node_id;
-                  }
-               }
-
-               // if (cache_blocks < max_cache_blocks /* && cache_nodes[node_id - app_cores] == node */)
+               // if (mem_cap <= .25)
                // {
-               //    cache_blocks ++;
-               //    node = node_id;
+               //    if (cache_blocks < max_cache_blocks && cache_nodes1[node_id - app_cores] == node)
+               //    {
+               //       cache_blocks ++;
+               //       node = node_id;
+               //    }
                // }
+               // else
+               // {
+               //    if (cache_nodes1[node_id - app_cores] == node)
+               //    {
+               //       node = node_id;
+               //    }
+               //    else if (cache_blocks < max_cache_blocks && node != node_id)
+               //    {
+               //       cache_blocks ++;
+               //       node = node_id;
+               //    }
+               // }
+
+               // if (cache_blocks < max_cache_blocks && node != node_id/* && cache_nodes[node_id - app_cores] == node */)
+               {
+                  cache_blocks ++;
+                  node = node_id;
+               }
                block_map[block_num] = true;
                SimGMMCoreMovType(TLB_INSERT);
                SimGMMCoreMovComponent(GMM_CORE);

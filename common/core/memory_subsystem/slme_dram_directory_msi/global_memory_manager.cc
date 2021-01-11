@@ -521,6 +521,7 @@ void
 GlobalMemoryManager::incrElapsedTime(SubsecondTime latency, ShmemPerfModel::Thread_t thread_num)
 {
    MYLOG("cycles += %s", itostr(latency).c_str());
+   // LOG_ASSERT_ERROR(latency < SubsecondTime::US(10), "");
    getShmemPerfModel()->incrElapsedTime(latency, thread_num);
 }
 

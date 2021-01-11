@@ -19,9 +19,9 @@ class AtomicSwap : public Policy
    const uint64_t block_size = 1UL << block_logsize;
    const uint64_t block_mask = ~(block_size - 1);
    const uint64_t num_nodes = 4;
-   const uint64_t app_cores = 16;
+   const uint64_t app_cores = 32;
    const uint64_t shared_cores = app_cores / num_nodes;
-   const float mem_cap = 4. / num_nodes;
+   const float mem_cap = 1; // 4. / num_nodes;
 
    bool *block_map; // [length / block_size + 1];
    uint64_t node_id = -1;
@@ -116,7 +116,7 @@ public:
             if (!block_map[block_num])
             {
                int node = get_home(block_num);
-               if (node == node_id || cache_blocks < max_cache_blocks)
+               // if (node == node_id || cache_blocks < max_cache_blocks)
                {
                   cache_blocks ++;
                   node = node_id;

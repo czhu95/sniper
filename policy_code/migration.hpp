@@ -67,7 +67,8 @@ public:
             // printf("blocknum: %d\n", block_num);
             if (!block_map[block_num])
             {
-               int node = get_home(block_num);
+               // int node = get_home(block_num);
+               int node = app_cores;
                // printf("node id: %d", node);
                // if (mem_cap <= .25)
                // {

@@ -14,17 +14,18 @@
 
 #define BFS
 // #define PageRank
+// #define CC
 
 class AtomicWriteAdd : public Policy
 {
    uint64_t start, end, length;
-   const uint64_t block_logsize = 20;
+   const uint64_t block_logsize = 12;
    const uint64_t block_size = 1UL << block_logsize;
    const uint64_t block_mask = ~(block_size - 1);
    const uint64_t num_nodes = 4;
-   const uint64_t app_cores = 16;
-   const float mem_cap = 4. / num_nodes;
-   const int cache_nodes[4] = {19, 18, 17, 16};
+   const uint64_t app_cores = 32;
+   const float mem_cap = 1.;
+   const int cache_nodes1[4] = {35, 34, 33, 32};
 
    bool *block_map; // [length / block_size + 1];
    uint64_t node_id = -1;
@@ -35,6 +36,9 @@ class AtomicWriteAdd : public Policy
 #endif
 #ifdef PageRank
    double *data;
+#endif
+#ifdef CC
+   uint32_t *data;
 #endif
 
    int get_home(uint64_t block_num)
@@ -59,12 +63,16 @@ public:
             length = end - start;
             int num_blocks = length / block_size + 1;
 #ifdef BFS
-            data = new uint32_t[length / sizeof(double)];
+            data = new uint32_t[length / sizeof(uint32_t)];
 #endif
 #ifdef PageRank
             data = new double[length / sizeof(double)];
 #endif
-            max_cache_blocks = int(num_blocks * mem_cap);
+#ifdef CC
+            data = new uint32_t[length / sizeof(uint32_t)];
+#endif
+            max_cache_blocks = int(num_blocks * (mem_cap > .25 ? mem_cap - .25 : mem_cap));
+            // max_cache_blocks = int(num_blocks * mem_cap);
             block_map = new bool[num_blocks];
             for (int i = 0; i < length / block_size + 1; i ++)
                block_map[i] = false;
@@ -84,12 +92,35 @@ public:
             // printf("blocknum: %d\n", block_num);
             if (!block_map[block_num])
             {
-               int node = get_home(block_num);
-               if (cache_blocks < max_cache_blocks /* && cache_nodes[node_id - app_cores] == node */)
-               {
-                  cache_blocks ++;
-                  node = node_id;
-               }
+               // int node = get_home(block_num);
+               int node = app_cores;
+               // printf("node id: %d", node);
+               // if (mem_cap <= .25)
+               // {
+               //    if (cache_blocks < max_cache_blocks && cache_nodes1[node_id - app_cores] == node)
+               //    {
+               //       cache_blocks ++;
+               //       node = node_id;
+               //    }
+               // }
+               // else
+               // {
+               //    if (cache_nodes1[node_id - app_cores] == node)
+               //    {
+               //       node = node_id;
+               //    }
+               //    else if (cache_blocks < max_cache_blocks && node != node_id)
+               //    {
+               //       cache_blocks ++;
+               //       node = node_id;
+               //    }
+               // }
+
+               // if (cache_blocks < max_cache_blocks /* && cache_nodes[node_id - app_cores] == node */)
+               // {
+               //    cache_blocks ++;
+               //    node = node_id;
+               // }
                block_map[block_num] = true;
                SimGMMCoreMovType(TLB_INSERT);
                SimGMMCoreMovComponent(GMM_CORE);
@@ -115,18 +146,26 @@ public:
             uint64_t va = msg.payload[0];
 #ifdef BFS
             uint64_t val = msg.payload[1];
-            if (data[(va - start) >> 3] != val)
-                data[(va - start) >> 3] = val;
+            if (data[(va - start) >> 2] != val)
+                data[(va - start) >> 2] = val;
 #endif
 #ifdef PageRank
             double addend = *((double *)&msg.payload[1]);
             data[(va - start) >> 3] += addend;
 #endif
-            // SimGMMCoreMovType(ATOMIC_UPDATE_MSG);
-            // SimGMMCoreMovComponent(GMM_CORE);
-            // SimGMMCoreMessage();
+#ifdef CC
+            uint64_t val = msg.payload[1];
+            // printf("start=%lx, va=%lx, val=%lx\n", start, va, val);
+            data[(va - start) >> 2] = MIN(data[(va - start) >> 2], data[(val - start) >> 2]);
+#endif
             SimGMMCoreMovType(GMM_CORE_DONE);
             SimGMMCoreMessage();
+
+            // SimGMMCoreMovRecv(msg.requester);
+            // SimGMMCoreMovRecv(msg.requester);
+            // SimGMMCoreMovType(GMM_USER_DONE);
+            // SimGMMCoreMovComponent(CORE);
+            // SimGMMCoreMessage();
             break;
          }
          default:

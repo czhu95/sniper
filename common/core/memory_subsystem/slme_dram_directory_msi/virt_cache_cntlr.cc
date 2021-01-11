@@ -1425,7 +1425,7 @@ MYLOG("insertCacheBlock l%d @ %lx as %c (now %c)", m_mem_component, address, CSt
    CacheBlockInfo evict_block_info;
    Byte evict_buf[getCacheBlockSize()];
 
-   LOG_ASSERT_ERROR(getCacheState(address) == CacheState::INVALID, "we already have this line, can't add it again");
+   LOG_ASSERT_ERROR(getCacheState(address) == CacheState::INVALID, "we already have this line (0x%lx), can't add it again", address);
 
    m_master->m_cache->insertSingleLine(address, data_buf,
          &eviction, &evict_address, &evict_block_info, evict_buf,

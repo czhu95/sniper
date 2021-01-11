@@ -159,11 +159,17 @@ DirectoryMSIPolicy::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
    m_dram_directory_cache->getDirectoryEntry(va, true);
    updateShmemPerf(shmem_msg, ShmemPerf::TD_ACCESS);
 
+   policy_id_t policy_id;
+   uint64_t seg_id;
+   bool found = Sim()->getSegmentTable()->lookup(va, policy_id, seg_id);
+
    switch (shmem_msg_type)
    {
       case ShmemMsg::EX_REQ:
       {
          MYLOG("E REQ<%u @ %lx", sender, va);
+         // if (found)
+         //    LOG_PRINT_WARNING("%d written by %d", seg_id, requester);
 
          // Add request onto a queue
          ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
@@ -183,6 +189,8 @@ DirectoryMSIPolicy::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
       case ShmemMsg::SH_REQ:
       {
          MYLOG("S REQ<%u @ %lx", sender, va);
+         // if (found)
+         //    LOG_PRINT_WARNING("%d read by %d", seg_id, requester);
 
          // Add request onto a queue
          ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
@@ -221,6 +229,8 @@ DirectoryMSIPolicy::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
 
       case ShmemMsg::UPGRADE_REQ:
          MYLOG("UPGR REQ<%u @ %lx", sender, va);
+         // if (found)
+         //    LOG_PRINT_WARNING("%d written by %d", seg_id, requester);
 
          // Add request onto a queue
          ShmemReq* shmem_req = new ShmemReq(shmem_msg, msg_time);
