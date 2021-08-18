@@ -4,10 +4,12 @@
 #include "replication.hpp"
 #include "hash_cas.hpp"
 #include "migration.hpp"
+#include "hybrid_mem.hpp"
+#include "remote_mem.hpp"
 
 int main()
 {
-   Policy *policies[64] = {NULL};
+   Policy *policies[512] = {NULL};
    // AtomicSwap atomic_swap_policy;
    // Replication replication_policy;
    GMMCoreMessage msg;
@@ -48,6 +50,16 @@ int main()
             if (msg.type == POLICY_INIT)
                 policies[msg.segid] = new Migration();
             ((Migration *)policies[msg.segid])->Exec(msg);
+            break;
+         case 7 /*hybrid*/:
+            if (msg.type == POLICY_INIT)
+                policies[msg.segid] = new HybridMem();
+            ((HybridMem *)policies[msg.segid])->Exec(msg);
+            break;
+         case 8 /*remote*/:
+            if (msg.type == POLICY_INIT)
+                policies[msg.segid] = new RemoteMem();
+            ((RemoteMem *)policies[msg.segid])->Exec(msg);
             break;
          default:
             break;
