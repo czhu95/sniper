@@ -128,6 +128,11 @@ namespace Sift
       RecOtherGMMCoreMessage,
       RecOtherGMMCorePull,
       RecOtherGMMCorePullResponse,
+      RecOtherResched,
+      RecOtherPullResched,
+      RecOtherReschedResponse,
+      RecOtherUserThread,
+      RecOtherUserThreadResponse,
       RecOtherEnd = 0xff,
    } RecOtherType;
 
@@ -181,7 +186,7 @@ namespace Sift
 
    struct GMMCoreMessage {
       int16_t requester;
-      int8_t segid;
+      uint8_t segid;
       int8_t policy;
       int16_t type;
       int16_t component;

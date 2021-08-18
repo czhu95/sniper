@@ -1498,3 +1498,78 @@ void Sift::Writer::PullGMMCoreMessage(Sift::GMMCoreMessage &msg)
       End();
    }
 }
+
+void Sift::Writer::UserThread(uint64_t fs_base)
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write UserThread" << std::endl;
+   #endif
+
+   if (!output)
+   {
+      return;
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherUserThread;
+   rec.Other.size = sizeof(uint64_t); //sizeof(Sift::GMMCoreMessage);
+   output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   output->write(reinterpret_cast<char*>(&fs_base), sizeof(uint64_t));
+   output->flush();
+}
+
+uint64_t Sift::Writer::PullResched()
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write PullResched" << std::endl;
+   #endif
+
+   if (!output)
+   {
+      return (uint64_t) -1;
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherPullResched;
+   rec.Other.size = 0;
+   output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   output->flush();
+
+   initResponse();
+
+   // wait for reply
+   Record respRec;
+   response->read(reinterpret_cast<char*>(&respRec), sizeof(rec.Other));
+
+   sift_assert(respRec.Other.zero == 0);
+   if (respRec.Other.type != RecOtherReschedResponse)
+       return 1;
+
+   sift_assert(respRec.Other.type == RecOtherReschedResponse);
+   sift_assert(respRec.Other.size == sizeof(uint64_t));
+
+   uint64_t user_thread_id = 0;
+   response->read(reinterpret_cast<char*>(&user_thread_id), sizeof(uint64_t));
+   return user_thread_id;
+}
+
+void Sift::Writer::Resched()
+{
+   #if VERBOSE > 1
+   std::cerr << "[DEBUG:" << m_id << "] Write Resched" << std::endl;
+   #endif
+
+   if (!output)
+   {
+      return;
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherResched;
+   rec.Other.size = 0;
+   output->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   output->flush();
+}

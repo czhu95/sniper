@@ -53,6 +53,8 @@ Sift::Reader::Reader(const char *filename, const char *response_filename, uint32
    , handleGMMCoreMessageFunc(NULL)
    , handleGMMCorePullFunc(NULL)
    , handleGMMCoreArg(NULL)
+   , handleUserThreadFunc(NULL)
+   , handleUserThreadArg(NULL)
    , filesize(0)
    , last_address(0)
    , icache()
@@ -647,7 +649,27 @@ bool Sift::Reader::Read(Instruction &inst)
                }
                break;
             }
-
+            case RecOtherPullResched:
+            {
+               assert(rec.Other.size == 0);
+               uint64_t threadid = handlePullReschedFunc();
+               sendReschedResponse(threadid);
+               break;
+            }
+            case RecOtherResched:
+            {
+               assert(rec.Other.size == 0);
+               handleReschedFunc(handleReschedArg);
+               break;
+            }
+            case RecOtherUserThread:
+            {
+               assert(rec.Other.size == sizeof(uint64_t));
+               uint64_t fs_base = 0;
+               input->read(reinterpret_cast<char*>(&fs_base), sizeof(uint64_t));
+               handleUserThreadFunc(handleUserThreadArg, fs_base);
+               break;
+            }
             default:
             {
                uint8_t *bytes = new uint8_t[rec.Other.size];
@@ -945,6 +967,26 @@ void Sift::Reader::sendGMMCorePullResponse(GMMCoreMessage &msg)
    rec.Other.size = sizeof(GMMCoreMessage);
    response->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
    response->write(reinterpret_cast<char*>(&msg), sizeof(GMMCoreMessage));
+   response->flush();
+}
+
+void Sift::Reader::sendReschedResponse(uint64_t user_thread_id)
+{
+   #if VERBOSE > 0
+   std::cerr << "[DEBUG:" << m_id << "] Write ReschedResponse" << std::endl;
+   #endif
+
+   if (!initResponse())
+   {
+      std::cerr << "[SIFT:" << m_id << "] Error: initResponse failed\n";
+   }
+
+   Record rec;
+   rec.Other.zero = 0;
+   rec.Other.type = RecOtherReschedResponse;
+   rec.Other.size = sizeof(uint64_t);
+   response->write(reinterpret_cast<char*>(&rec), sizeof(rec.Other));
+   response->write(reinterpret_cast<char*>(&user_thread_id), sizeof(uint64_t));
    response->flush();
 }
 

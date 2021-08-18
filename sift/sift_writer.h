@@ -92,7 +92,10 @@ namespace Sift
          void SendGMMUserMessage(Sift::GMMUserMessage &msg);
          void SendGMMCoreMessage(Sift::GMMCoreMessage &msg);
          void PullGMMCoreMessage(Sift::GMMCoreMessage &msg);
+         void Resched();
+         uint64_t PullResched();
 
+         void UserThread(uint64_t fs_base);
          void setHandleAccessMemoryFunc(HandleAccessMemoryFunc func, void* arg = NULL) { assert(func); handleAccessMemoryFunc = func; handleAccessMemoryArg = arg; }
    };
 };

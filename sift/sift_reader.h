@@ -66,6 +66,9 @@ namespace Sift
       typedef void (*HandleGMMUserMessageFunc)(void *arg, Sift::GMMUserMessage *msg);
       typedef void (*HandleGMMCoreMessageFunc)(void *arg, Sift::GMMCoreMessage *msg);
       typedef void (*HandleGMMCorePullFunc)(void *arg, Sift::GMMCoreMessage *&msg);
+      typedef void (*HandleUserThreadFunc)(void *arg, uint64_t fs_base);
+      typedef uint64_t (*HandlePullReschedFunc)();
+      typedef void (*HandleReschedFunc)(void *arg);
 
       private:
          vistream *input;
@@ -103,6 +106,11 @@ namespace Sift
          HandleGMMCoreMessageFunc handleGMMCoreMessageFunc;
          HandleGMMCorePullFunc handleGMMCorePullFunc;
          void *handleGMMCoreArg;
+         HandleUserThreadFunc handleUserThreadFunc;
+         void *handleUserThreadArg;
+         HandlePullReschedFunc handlePullReschedFunc;
+         void *handleReschedArg;
+         HandleReschedFunc handleReschedFunc;
          uint64_t filesize;
          std::ifstream *inputstream;
 
@@ -135,8 +143,8 @@ namespace Sift
          void sendSyscallResponse(uint64_t return_code);
          void sendEmuResponse(bool handled, EmuReply res);
          void sendGMMCorePullResponse(GMMCoreMessage &msg);
+         void sendReschedResponse(uint64_t user_thread_id);
          void sendSimpleResponse(RecOtherType type, void *data = NULL, uint32_t size = 0);
-
 
       public:
          Reader(const char *filename, const char *response_filename = "", uint32_t id = 0);
@@ -160,6 +168,9 @@ namespace Sift
          void setHandleGMMCmdFunc(HandleGMMCmdFunc func, void *arg = NULL) { handleGMMCmdFunc = func; handleGMMCmdArg = arg; }
          void setHandleGMMUserFunc(HandleGMMUserMessageFunc func, void *arg = NULL) { handleGMMUserMessageFunc = func; handleGMMUserArg = arg; }
          void setHandleGMMCoreFunc(HandleGMMCoreMessageFunc msg_func, HandleGMMCorePullFunc pull_func, void *arg = NULL) { handleGMMCoreMessageFunc = msg_func; handleGMMCorePullFunc = pull_func, handleGMMCoreArg = arg; }
+         void setHandleUserThreadFunc(HandleUserThreadFunc func, void *arg = NULL) { handleUserThreadFunc = func; handleUserThreadArg = arg; }
+         void setHandlePullReschedFunc(HandlePullReschedFunc func) { handlePullReschedFunc = func; }
+         void setHandleReschedFunc(HandleReschedFunc func, void *arg) { handleReschedFunc = func; handleReschedArg = arg; }
 
          uint64_t getPosition();
          uint64_t getLength();
