@@ -326,6 +326,7 @@ VirtCacheCntlr::processMemOpFromCore(
       Core::mem_op_t mem_op_type,
       IntPtr ca_address, UInt32 offset,
       Byte* data_buf, UInt32 data_length,
+      IntPtr user_thread,
       bool modeled,
       bool count)
 {
@@ -496,7 +497,7 @@ MYLOG("L1 miss");
       }
 
 MYLOG("processMemOpFromCore l%d before next", m_mem_component);
-      hit_where = m_next_cache_cntlr->processShmemReqFromPrevCache(this, mem_op_type, ca_address, modeled, count, Prefetch::NONE, t_start, false);
+      hit_where = m_next_cache_cntlr->processShmemReqFromPrevCache(this, mem_op_type, ca_address, user_thread, modeled, count, Prefetch::NONE, t_start, false);
       bool next_cache_hit = hit_where != HitWhere::MISS;
 MYLOG("processMemOpFromCore l%d next hit = %d", m_mem_component, next_cache_hit);
 
@@ -523,7 +524,7 @@ MYLOG("processMemOpFromCore l%d got message reply", m_mem_component);
 
          /* have the next cache levels fill themselves with the new data */
 MYLOG("processMemOpFromCore l%d before next fill", m_mem_component);
-         hit_where = m_next_cache_cntlr->processShmemReqFromPrevCache(this, mem_op_type, ca_address, false, false, Prefetch::NONE, t_start, true);
+         hit_where = m_next_cache_cntlr->processShmemReqFromPrevCache(this, mem_op_type, ca_address, user_thread, false, false, Prefetch::NONE, t_start, true);
 MYLOG("processMemOpFromCore l%d after next fill", m_mem_component);
          LOG_ASSERT_ERROR(hit_where != HitWhere::MISS,
             "Tried to read in next-level cache, but data is already gone");
@@ -761,7 +762,7 @@ VirtCacheCntlr::doPrefetch(IntPtr prefetch_address, SubsecondTime t_start)
    MYLOG("prefetching %lx", prefetch_address);
    SubsecondTime t_before = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_USER_THREAD, t_start); // Start the prefetch at the same time as the original miss
-   HitWhere::where_t hit_where = processShmemReqFromPrevCache(this, Core::READ, prefetch_address, true, true, Prefetch::OWN, t_start, false);
+   HitWhere::where_t hit_where = processShmemReqFromPrevCache(this, Core::READ, prefetch_address, 0, true, true, Prefetch::OWN, t_start, false);
 
    if (hit_where == HitWhere::MISS)
    {
@@ -771,7 +772,7 @@ VirtCacheCntlr::doPrefetch(IntPtr prefetch_address, SubsecondTime t_start)
       waitForNetworkThread();
       wakeUpNetworkThread();
 
-      hit_where = processShmemReqFromPrevCache(this, Core::READ, prefetch_address, false, false, Prefetch::OWN, t_start, false);
+      hit_where = processShmemReqFromPrevCache(this, Core::READ, prefetch_address, 0, false, false, Prefetch::OWN, t_start, false);
 
       LOG_ASSERT_ERROR(hit_where != HitWhere::MISS, "Line was not there after prefetch");
    }
@@ -786,7 +787,7 @@ VirtCacheCntlr::doPrefetch(IntPtr prefetch_address, SubsecondTime t_start)
  *****************************************************************************/
 
 HitWhere::where_t
-VirtCacheCntlr::processShmemReqFromPrevCache(VirtCacheCntlr* requester, Core::mem_op_t mem_op_type, IntPtr address, bool modeled, bool count, Prefetch::prefetch_type_t isPrefetch, SubsecondTime t_issue, bool have_write_lock)
+VirtCacheCntlr::processShmemReqFromPrevCache(VirtCacheCntlr* requester, Core::mem_op_t mem_op_type, IntPtr address, IntPtr user_thread, bool modeled, bool count, Prefetch::prefetch_type_t isPrefetch, SubsecondTime t_issue, bool have_write_lock)
 {
    #ifdef PRIVATE_L2_OPTIMIZATION
    bool have_write_lock_internal = have_write_lock;
@@ -958,7 +959,7 @@ VirtCacheCntlr::processShmemReqFromPrevCache(VirtCacheCntlr* requester, Core::me
             invalidateCacheBlock(address);
 
          // let the next cache level handle it.
-         hit_where = m_next_cache_cntlr->processShmemReqFromPrevCache(this, mem_op_type, address, modeled, count, isPrefetch == Prefetch::NONE ? Prefetch::NONE : Prefetch::OTHER, t_issue, have_write_lock_internal);
+         hit_where = m_next_cache_cntlr->processShmemReqFromPrevCache(this, mem_op_type, address, user_thread, modeled, count, isPrefetch == Prefetch::NONE ? Prefetch::NONE : Prefetch::OTHER, t_issue, have_write_lock_internal);
          if (hit_where != HitWhere::MISS)
          {
             cache_hit = true;
@@ -1021,7 +1022,7 @@ VirtCacheCntlr::processShmemReqFromPrevCache(VirtCacheCntlr* requester, Core::me
          }
          else
          {
-            initiateDirectoryAccess(mem_op_type, address, isPrefetch != Prefetch::NONE, t_issue);
+            initiateDirectoryAccess(mem_op_type, address, user_thread, isPrefetch != Prefetch::NONE, t_issue);
          }
       }
    }
@@ -1147,7 +1148,7 @@ VirtCacheCntlr::accessDRAM(Core::mem_op_t mem_op_type, IntPtr address, bool isPr
 }
 
 void
-VirtCacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefetch, SubsecondTime t_issue)
+VirtCacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr address, IntPtr user_thread, bool isPrefetch, SubsecondTime t_issue)
 {
    bool exclusive = false;
 
@@ -1169,7 +1170,7 @@ VirtCacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr addre
    bool first = false;
    {
       ScopedLock sl(getLock());
-      CacheDirectoryWaiter* request = new CacheDirectoryWaiter(exclusive, isPrefetch, this, t_issue);
+      CacheDirectoryWaiter* request = new CacheDirectoryWaiter(exclusive, isPrefetch, this, t_issue, user_thread);
       m_master->m_directory_waiters.enqueue(address, request);
       if (m_master->m_directory_waiters.size(address) == 1)
          first = true;
@@ -1185,16 +1186,16 @@ VirtCacheCntlr::initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr addre
          CacheBlockInfo* cache_block_info = getCacheBlockInfo(address);
          if (cache_block_info && (cache_block_info->getCState() == CacheState::SHARED))
          {
-            processUpgradeReqToGMM(address, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
+            processUpgradeReqToGMM(address, user_thread, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
          }
          else
          {
-            processExReqToGMM(address);
+            processExReqToGMM(address, user_thread);
          }
       }
       else
       {
-         processShReqToGMM(address);
+         processShReqToGMM(address, user_thread);
       }
    }
    else
@@ -1224,7 +1225,7 @@ VirtCacheCntlr::processSubReqToGMM(IntPtr address, Byte *data_buf, UInt32 data_l
 }
 
 void
-VirtCacheCntlr::processExReqToGMM(IntPtr address)
+VirtCacheCntlr::processExReqToGMM(IntPtr address, IntPtr user_thread)
 {
    // We need to send a request to the Dram Directory Cache
    MYLOG("EX REQ>%d @ %lx", m_core_id_master ,address);
@@ -1240,12 +1241,13 @@ VirtCacheCntlr::processExReqToGMM(IntPtr address)
          m_core_id_gmm /* receiver */,
          address,
          Sim()->getThreadManager()->getThreadFromID(m_core_id)->va2pa(address),
+         user_thread,
          NULL, 0,
          HitWhere::UNKNOWN, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
 }
 
 void
-VirtCacheCntlr::processUpgradeReqToGMM(IntPtr address, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+VirtCacheCntlr::processUpgradeReqToGMM(IntPtr address, IntPtr user_thread, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
    // We need to send a request to the Dram Directory Cache
    MYLOG("UPGR REQ @ %lx", address);
@@ -1262,12 +1264,13 @@ VirtCacheCntlr::processUpgradeReqToGMM(IntPtr address, ShmemPerf *perf, ShmemPer
          m_core_id_gmm /* receiver */,
          address,
          Sim()->getThreadManager()->getThreadFromID(owner)->va2pa(address),
+         user_thread,
          NULL, 0,
          HitWhere::UNKNOWN, perf, thread_num);
 }
 
 void
-VirtCacheCntlr::processShReqToGMM(IntPtr address)
+VirtCacheCntlr::processShReqToGMM(IntPtr address, IntPtr user_thread)
 {
 MYLOG("SH REQ @ %lx", address);
    getMemoryManager()->sendMsg(ShmemMsg::SH_REQ,
@@ -1276,6 +1279,7 @@ MYLOG("SH REQ @ %lx", address);
          m_core_id_gmm /* receiver */,
          address,
          Sim()->getThreadManager()->getThreadFromID(m_core_id)->va2pa(address),
+         user_thread,
          NULL, 0,
          HitWhere::UNKNOWN, m_shmem_perf, ShmemPerfModel::_USER_THREAD);
 }
@@ -1893,7 +1897,7 @@ MYLOG("WB REQ<%u @ %lx", sender, address);
 
             // We (the master cache) are sending the upgrade request in place of request->cache_cntlr,
             // so use their ShmemPerf* rather than ours
-            processUpgradeReqToGMM(address, request->cache_cntlr->m_shmem_perf, ShmemPerfModel::_SIM_THREAD);
+            processUpgradeReqToGMM(address, request->user_thread, request->cache_cntlr->m_shmem_perf, ShmemPerfModel::_SIM_THREAD);
 
             releaseStackLock(address);
             return;

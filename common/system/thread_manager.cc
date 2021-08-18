@@ -44,6 +44,7 @@ ThreadManager::thread_group_t ThreadManager::getThreadGroup(thread_id_t thread_i
 ThreadManager::ThreadManager()
    : m_thread_tls(TLS::create())
    , m_scheduler(Scheduler::create(this))
+   , m_last_resched(0)
 {
 }
 
@@ -220,6 +221,133 @@ bool ThreadManager::anyThreadRunning()
    {
       if (isThreadRunning(thread_id) || isThreadInitializing(thread_id))
          return true;
+   }
+   return false;
+}
+
+void ThreadManager::resched(UInt64 user_thread_id)
+{
+    m_resched_lock.acquire();
+    for (auto it = m_resched_queue.begin(); it != m_resched_queue.end(); ++ it)
+    {
+       if (*it == user_thread_id)
+       {
+           m_resched_lock.release();
+           return;
+       }
+    }
+    m_resched_queue.push_back(user_thread_id);
+    LOG_PRINT_WARNING("Resched Queue: enqueue %lx", user_thread_id);
+    if (m_resched_queue.size() == 1 && m_resume_queue.size() == 0)
+        m_resched_cond.signal();
+
+    m_resched_state[user_thread_id] = RESCHEDULING;
+    m_resched_lock.release();
+}
+
+void ThreadManager::userResched(UInt64 user_thread_id)
+{
+   LOG_ASSERT_ERROR(m_resched_state[user_thread_id] == RESCHEDULING, "user thread not rescheduling");
+   m_resched_state[user_thread_id] = RESCHEDULED;
+}
+
+void ThreadManager::resume(UInt64 user_thread_id)
+{
+    for (auto it = m_resume_queue.begin(); it != m_resume_queue.end(); ++ it)
+    {
+       LOG_ASSERT_ERROR(*it != user_thread_id, "User thread %lx already in resume queue", user_thread_id);
+    }
+    m_resume_queue.push_back(user_thread_id);
+    LOG_PRINT_WARNING("Resume Queue: enqueue %lx", user_thread_id);
+    if (m_resume_queue.size() == 1 && m_resched_queue.size() == 0)
+        m_resched_cond.signal();
+}
+
+void ThreadManager::scheduleResume(UInt64 user_thread_id, SubsecondTime time)
+{
+   m_resched_lock.acquire();
+   m_scheduled_resume[time] = user_thread_id;
+   m_resched_lock.release();
+}
+
+void ThreadManager::tryResume(SubsecondTime now)
+{
+   m_resched_lock.acquire();
+   for (auto it = m_scheduled_resume.begin(); it != m_scheduled_resume.end(); )
+   {
+      if (it->first < now)
+      {
+         resume(it->second);
+         it = m_scheduled_resume.erase(it);
+      }
+      else
+         break;
+   }
+   m_resched_lock.release();
+}
+
+void ThreadManager::stop()
+{
+   m_resched_lock.acquire();
+   m_resched_queue.clear();
+   m_resume_queue.clear();
+   m_resched_queue.push_back(1);
+   m_resched_cond.signal();
+   m_resched_lock.release();
+}
+
+UInt64 ThreadManager::pullResched()
+{
+    m_resched_lock.acquire();
+
+    if (m_last_resched != 0)
+    {
+       if (m_resched_state[m_last_resched] == RESUMING)
+          m_resched_state[m_last_resched] = RESUMED;
+    }
+
+    while (m_resched_queue.empty() && m_resume_queue.empty())
+        m_resched_cond.wait(m_resched_lock);
+
+    UInt64 user_thread_id;
+    if (!m_resched_queue.empty())
+    {
+       user_thread_id = m_resched_queue.front();
+       m_resched_queue.pop_front();
+       LOG_PRINT_WARNING("Resched Queue: dequeue %lx", user_thread_id);
+    }
+    else
+    {
+       user_thread_id = m_resume_queue.front();
+       m_resume_queue.pop_front();
+       LOG_PRINT_WARNING("Resume Queue: dequeue %lx", user_thread_id);
+       user_thread_id |= 1UL << 63;
+    }
+    m_last_resched = user_thread_id;
+    m_resched_lock.release();
+    return user_thread_id;
+}
+
+ThreadManager::resched_status_t ThreadManager::getReschedStatus(UInt64 user_thread_id)
+{
+   if (m_resched_state.count(user_thread_id) == 0)
+      m_resched_state[user_thread_id] = RUNNING;
+
+   return m_resched_state[user_thread_id];
+}
+
+void ThreadManager::userThreadSwitchOut(UInt64 user_thread_id)
+{
+   // if (m_resched_state[user_thread_id] == RESCHEDULING)
+   //    m_resched_state[user_thread_id] = RESCHEDULED;
+}
+
+bool ThreadManager::userThreadSwitchIn(UInt64 user_thread_id)
+{
+   if (m_resched_state[user_thread_id] == RESCHEDULED)
+   {
+      m_resched_state[user_thread_id] = RUNNING;
+      return true;
    }
    return false;
 }
@@ -424,7 +552,6 @@ void UserThreadManager::joinThread(thread_id_t thread_id, thread_id_t join_threa
 
    LOG_PRINT("Exiting join thread.");
 }
-
 
 SystemThreadManager::SystemThreadManager()
    : ThreadManager()

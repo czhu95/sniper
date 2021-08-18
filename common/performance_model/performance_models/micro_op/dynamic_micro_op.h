@@ -70,11 +70,14 @@ class DynamicMicroOp
 
       Sift::GMMUserMessage *m_user_msg;
       Sift::GMMCoreMessage *m_core_msg;
+
+      UInt64 m_user_thread_id;
       // architecture-specific information to be defined in derived classes
 
    public:
 
       DynamicMicroOp(const MicroOp *uop, const CoreModel *core_model, ComponentPeriod period);
+      DynamicMicroOp(const DynamicMicroOp *other);
       virtual ~DynamicMicroOp();
 
       template<typename T> static T* alloc(Allocator *alloc, const MicroOp *uop, const CoreModel *core_model, ComponentPeriod period)
@@ -83,6 +86,14 @@ class DynamicMicroOp
          T *t = new(ptr) T(uop, core_model, period);
          return t;
       }
+
+      template<typename T> static T* copy(Allocator *alloc, const DynamicMicroOp *other)
+      {
+         void *ptr = alloc->alloc(sizeof(T));
+         T *t = new(ptr) T(other);
+         return t;
+      }
+
       static void operator delete(void* ptr) { Allocator::dealloc(ptr); }
 
       const MicroOp *getMicroOp() const { return m_uop; }
@@ -155,6 +166,9 @@ class DynamicMicroOp
       void attachGMMUserMessage(Sift::GMMUserMessage *msg);
       Sift::GMMCoreMessage *getGMMCoreMessage() const;
       Sift::GMMUserMessage *getGMMUserMessage() const;
+
+      void setUserThreadId(UInt64 user_thread_id);
+      UInt64 getUserThreadId() const;
 
       // More dynamic, architecture-dependent information to be defined by derived classes
       virtual const char* getType() const = 0; // Make this class pure virtual

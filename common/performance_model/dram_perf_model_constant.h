@@ -9,7 +9,7 @@
 
 class DramPerfModelConstant : public DramPerfModel
 {
-   private:
+   protected:
       QueueModel* m_queue_model;
       SubsecondTime m_dram_access_cost;
       ComponentBandwidth m_dram_bandwidth;
@@ -24,6 +24,18 @@ class DramPerfModelConstant : public DramPerfModel
       ~DramPerfModelConstant();
 
       SubsecondTime getAccessLatency(SubsecondTime pkt_time, UInt64 pkt_size, core_id_t requester, IntPtr address, DramCntlrInterface::access_t access_type, ShmemPerf *perf);
+
+   protected:
+      DramPerfModelConstant(core_id_t core_id,
+            UInt32 cache_block_size, int dummy __attribute((unused)));
+
+};
+
+class SecondaryDramPerfModelConstant : public DramPerfModelConstant
+{
+   public:
+      SecondaryDramPerfModelConstant(core_id_t core_id,
+            UInt32 cache_block_size);
 };
 
 #endif /* __DRAM_PERF_MODEL_CONSTANT_H__ */

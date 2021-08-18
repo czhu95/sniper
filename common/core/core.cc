@@ -286,7 +286,7 @@ Core::readInstructionMemory(IntPtr address, UInt32 instruction_size)
 
    // Cases with multiple cache lines or when we are not sure that it will be a hit call into the caches
    return initiateMemoryAccess(MemComponent::L1_ICACHE,
-             Core::NONE, Core::READ, address & blockmask, NULL, getMemoryManager()->getCacheBlockSize(), MEM_MODELED_COUNT_TLBTIME, 0, SubsecondTime::MaxTime());
+             Core::NONE, Core::READ, address & blockmask, NULL, getMemoryManager()->getCacheBlockSize(), 0, MEM_MODELED_COUNT_TLBTIME, 0, SubsecondTime::MaxTime());
 }
 
 void Core::accessMemoryFast(bool icache, mem_op_t mem_op_type, IntPtr address)
@@ -306,6 +306,7 @@ Core::initiateMemoryAccess(MemComponent::component_t mem_component,
       mem_op_t mem_op_type,
       IntPtr address,
       Byte* data_buf, UInt32 data_size,
+      IntPtr user_thread,
       MemModeled modeled,
       IntPtr eip,
       SubsecondTime now)
@@ -356,7 +357,7 @@ Core::initiateMemoryAccess(MemComponent::component_t mem_component,
    IntPtr end_addr_aligned = end_addr - (end_addr % cache_block_size);
    Byte *curr_data_buffer_head = (Byte*) data_buf;
 
-   LOG_ASSERT_WARNING(Sim()->getCfg()->getString("caching_protocol/type") == "single_level_memory" || address < (128UL << 30), "Accessing physical address (%p) beyond DRAM capacity.", address);
+   // LOG_ASSERT_WARNING(Sim()->getCfg()->getString("caching_protocol/type") == "single_level_memory" || address < (128UL << 30), "Accessing physical address (%p) beyond DRAM capacity.", address);
 
    for (IntPtr curr_addr_aligned = begin_addr_aligned; curr_addr_aligned <= end_addr_aligned; curr_addr_aligned += cache_block_size)
    {
@@ -393,7 +394,19 @@ Core::initiateMemoryAccess(MemComponent::component_t mem_component,
       if (m_cheetah_manager)
          m_cheetah_manager->access(mem_op_type, curr_addr_aligned);
 
-      HitWhere::where_t this_hit_where = getMemoryManager()->coreInitiateMemoryAccess(
+      HitWhere::where_t this_hit_where;
+      SingleLevelMemory::GlobalMemoryManager *mm = dynamic_cast<SingleLevelMemory::GlobalMemoryManager *>(getMemoryManager());
+      if (mm)
+         this_hit_where = mm->coreInitiateMemoryAccess(
+               mem_component,
+               lock_signal,
+               mem_op_type,
+               curr_addr_aligned, curr_offset,
+               user_thread,
+               data_buf ? curr_data_buffer_head : NULL, curr_size,
+               modeled);
+      else
+         this_hit_where = getMemoryManager()->coreInitiateMemoryAccess(
                mem_component,
                lock_signal,
                mem_op_type,
@@ -496,8 +509,15 @@ Core::initiateMemoryAccess(MemComponent::component_t mem_component,
  * Return Value:
  *   number of misses :: State the number of cache misses
  */
+
 MemoryResult
 Core::accessMemory(lock_signal_t lock_signal, mem_op_t mem_op_type, IntPtr d_addr, char* data_buffer, UInt32 data_size, MemModeled modeled, IntPtr eip, SubsecondTime now, bool is_fault_mask)
+{
+   return accessMemory(lock_signal, mem_op_type, d_addr, data_buffer, data_size, 0, modeled, eip, now, is_fault_mask);
+}
+
+MemoryResult
+Core::accessMemory(lock_signal_t lock_signal, mem_op_t mem_op_type, IntPtr d_addr, char* data_buffer, UInt32 data_size, IntPtr user_thread, MemModeled modeled, IntPtr eip, SubsecondTime now, bool is_fault_mask)
 {
    // In PINTOOL mode, if the data is requested, copy it to/from real memory
    if (data_buffer && !is_fault_mask)
@@ -516,7 +536,7 @@ Core::accessMemory(lock_signal_t lock_signal, mem_op_t mem_op_type, IntPtr d_add
    if (modeled == MEM_MODELED_NONE)
       return makeMemoryResult(HitWhere::UNKNOWN, SubsecondTime::Zero());
    else
-      return initiateMemoryAccess(MemComponent::L1_DCACHE, lock_signal, mem_op_type, d_addr, (Byte*) data_buffer, data_size, modeled, eip, now);
+      return initiateMemoryAccess(MemComponent::L1_DCACHE, lock_signal, mem_op_type, d_addr, (Byte*) data_buffer, data_size, user_thread, modeled, eip, now);
 }
 
 

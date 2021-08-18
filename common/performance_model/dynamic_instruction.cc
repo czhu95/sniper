@@ -7,7 +7,7 @@
 
 Allocator* DynamicInstruction::createAllocator()
 {
-   return new TypedAllocator<DynamicInstruction, 1024>();
+   return new TypedAllocator<DynamicInstruction, 32768>();
 }
 
 DynamicInstruction::~DynamicInstruction()

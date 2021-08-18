@@ -16,6 +16,7 @@ Thread::Thread(thread_id_t thread_id, app_id_t app_id)
    , m_rtn_tracer(NULL)
    , m_va2pa_func(NULL)
    , m_va2pa_arg(0)
+   , sleep(false)
 {
    m_syscall_model = new SyscallMdl(this);
    m_sync_client = new SyncClient(this);

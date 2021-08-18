@@ -103,6 +103,8 @@ namespace SingleLevelMemory
          case DRAM_READ_REQ:
          case GMM_USER_DONE:
          case USER_CACHE_READ_REQ:
+         case USER_RESCHED:
+         case USER_RESUME:
             // msg_type + address
             // msg_type - 1 byte
             return (1 + sizeof(IntPtr));

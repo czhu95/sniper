@@ -117,6 +117,12 @@ class TraceThread : public Runnable
       { return ((TraceThread*)arg)->handleGMMCmdFunc(cmd, start, arg1);  }
       static void __handleGMMUserMessageFunc(void *arg, Sift::GMMUserMessage *msg)
       { return ((TraceThread*)arg)->handleGMMUserMessageFunc(msg);  }
+      static void __handleUserThreadFunc(void *arg, uint64_t fs_base)
+      { return ((TraceThread*)arg)->handleUserThreadFunc(fs_base); }
+      static uint64_t __handlePullReschedFunc()
+      { return handlePullReschedFunc(); }
+      static void __handleReschedFunc(void *arg)
+      { ((TraceThread*)arg)->handleReschedFunc(); }
 
       Sift::Mode handleInstructionCountFunc(uint32_t icount);
       void handleCacheOnlyFunc(uint8_t icount, Sift::CacheOnlyType type, uint64_t eip, uint64_t address);
@@ -141,6 +147,9 @@ class TraceThread : public Runnable
 
       void handleGMMCmdFunc(uint64_t cmd, IntPtr start, uint64_t arg1);
       void handleGMMUserMessageFunc(Sift::GMMUserMessage *msg);
+      void handleUserThreadFunc(uint64_t fs_base);
+      static uint64_t handlePullReschedFunc();
+      void handleReschedFunc();
       void unblock();
 
       SubsecondTime getCurrentTime() const;
@@ -153,6 +162,9 @@ class TraceThread : public Runnable
       long long *m_papi_counters;
 
       Lock m_lock;
+
+      static std::map<UInt64, std::vector<DynamicInstruction *>> m_resched_insts;
+      static Lock m_resched_insts_lock;
 
    public:
       bool m_stopped;

@@ -42,6 +42,36 @@ DynamicMicroOp::DynamicMicroOp(const MicroOp *uop, const CoreModel *core_model, 
    this->m_user_msg = NULL;
 }
 
+
+DynamicMicroOp::DynamicMicroOp(const DynamicMicroOp *other)
+   : m_uop(other->m_uop)
+   , m_core_model(other->m_core_model)
+   , m_period(other->m_period)
+   , sequenceNumber(INVALID_SEQNR)
+   , address(other->address)
+   , squashed(other->squashed)
+   , intraInstructionDependencies(other->intraInstructionDependencies)
+   , microOpTypeOffset(other->microOpTypeOffset)
+   , squashedCount(other->squashedCount)
+   , dependenciesLength(0)
+   , execLatency(other->execLatency)
+   , branchTaken(false)
+   , branchMispredicted(false)
+   , dCacheHitWhere(HitWhere::UNKNOWN)
+   , iCacheHitWhere(HitWhere::L1I)
+   , iCacheLatency(0)
+   , m_forceLongLatencyLoad(false)
+   , first(other->first)
+   , last(other->last)
+   , m_user_thread_id(other->m_user_thread_id)
+{
+   m_user_msg = other->m_user_msg ? new Sift::GMMUserMessage(*(other->m_user_msg)) : NULL;
+   m_core_msg = other->m_core_msg ? new Sift::GMMCoreMessage(*(other->m_core_msg)) : NULL;
+
+   for(uint32_t i = 0 ; i < MAXIMUM_NUMBER_OF_DEPENDENCIES; i++)
+      this->dependencies[i] = -1;
+}
+
 DynamicMicroOp::~DynamicMicroOp()
 {
    if (m_core_msg)
@@ -168,4 +198,14 @@ Sift::GMMCoreMessage *DynamicMicroOp::getGMMCoreMessage() const
 Sift::GMMUserMessage *DynamicMicroOp::getGMMUserMessage() const
 {
    return m_user_msg;
+}
+
+void DynamicMicroOp::setUserThreadId(UInt64 user_thread_id)
+{
+   m_user_thread_id = user_thread_id;
+}
+
+UInt64 DynamicMicroOp::getUserThreadId() const
+{
+   return m_user_thread_id;
 }

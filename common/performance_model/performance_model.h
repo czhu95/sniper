@@ -50,7 +50,7 @@ public:
    FastforwardPerformanceModel *getFastforwardPerformanceModel() { return m_fastforward_model; }
    FastforwardPerformanceModel const* getFastforwardPerformanceModel() const { return m_fastforward_model; }
 
-   DynamicInstruction* createDynamicInstruction(Instruction *ins, IntPtr eip);
+   DynamicInstruction* createDynamicInstruction(Instruction *ins, IntPtr eip, UInt64 user_thread_id = 0);
 
    void traceInstruction(const DynamicMicroOp *uop, InstructionTracer::uop_times_t *times)
    {
@@ -82,6 +82,8 @@ public:
       else
          disableDetailedModel();
    }
+   virtual void queueReschedInstruction(DynamicMicroOp *uop);
+   virtual void resumeReschedInstruction(UInt64 user_thread_id);
 
 protected:
    friend class SpawnInstruction;

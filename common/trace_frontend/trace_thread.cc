@@ -37,6 +37,9 @@
 //bool TraceThread::xed_initialized = false;
 int TraceThread::m_isa = 0;
 
+std::map<UInt64, std::vector<DynamicInstruction *>> TraceThread::m_resched_insts;
+Lock TraceThread::m_resched_insts_lock;
+
 TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracefile, String responsefile, app_id_t app_id, bool cleanup)
    : m__thread(NULL)
    , m_thread(thread)
@@ -111,8 +114,11 @@ TraceThread::TraceThread(Thread *thread, SubsecondTime time_start, String tracef
       m_virt_cache = true;
       m_trace.setHandleGMMCmdFunc(TraceThread::__handleGMMCmdFunc, this);
       m_trace.setHandleGMMUserFunc(TraceThread::__handleGMMUserMessageFunc, this);
+      m_trace.setHandlePullReschedFunc(TraceThread::__handlePullReschedFunc);
+      m_trace.setHandleReschedFunc(TraceThread::__handleReschedFunc, this);
    }
    thread->setVa2paFunc(_va2pa, (UInt64)this);
+   m_trace.setHandleUserThreadFunc(TraceThread::__handleUserThreadFunc, this);
 
 }
 
@@ -754,6 +760,11 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
 {
 
    // Set up instruction
+   if (m_thread->sleep)
+   {
+      sleep(1);
+      m_thread->sleep = false;
+   }
 
    if (m_icache.count(inst.sinst->addr) == 0)
       m_icache[inst.sinst->addr] = decode(inst);
@@ -761,7 +772,12 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
    const dl::DecodedInst &dec_inst = *(m_decoder_cache[inst.sinst->addr]);
 
    Instruction *ins = m_icache[inst.sinst->addr];
-   DynamicInstruction *dynins = prfmdl->createDynamicInstruction(ins, m_virt_cache ? inst.sinst->addr : va2pa(inst.sinst->addr));
+   DynamicInstruction *dynins = prfmdl->createDynamicInstruction(ins, m_virt_cache ? inst.sinst->addr : va2pa(inst.sinst->addr), m_thread->getUserThreadId());
+
+   // while (Sim()->getThreadManager()->getReschedStatus(m_thread->getUserThreadId()) == ThreadManager::RESCHEDULING) ;
+
+   // if (Sim()->getThreadManager()->getReschedStatus(m_thread->getUserThreadId()) == ThreadManager::RESCHEDULED)
+   //    usleep(10000);
 
    // Add dynamic instruction info
 
@@ -822,6 +838,18 @@ void TraceThread::handleInstructionDetailed(Sift::Instruction &inst, Sift::Instr
          Sift::GMMUserMessage *msg = new Sift::GMMUserMessage{10, mem_address, 0};
          handleGMMUserMessageFunc(msg);
       }
+   }
+
+   UInt64 user_thread_id = m_thread->getUserThreadId();
+   if (Sim()->getThreadManager()->getReschedStatus(user_thread_id) == ThreadManager::RESCHEDULING ||
+       Sim()->getThreadManager()->getReschedStatus(user_thread_id) == ThreadManager::RESCHEDULED)
+   {
+      m_resched_insts_lock.acquire();
+      m_resched_insts[user_thread_id].push_back(dynins);
+      std::cerr<<"["<<user_thread_id<<"] RESCHED INSTRUCTION"<<std::endl;
+      m_resched_insts_lock.release();
+      usleep(100);
+      return;
    }
 
    // Push instruction
@@ -1023,6 +1051,9 @@ void TraceThread::run()
 
    printf("[TRACE:%u] -- %s --\n", m_thread->getId(), m_stop ? "STOP" : "DONE");
 
+   if (!m_stop)
+      Sim()->getThreadManager()->stop();
+
    SubsecondTime time_end = prfmdl ? prfmdl->getElapsedTime() : SubsecondTime::Zero();
 
    Sim()->getThreadManager()->onThreadExit(m_thread->getId());
@@ -1101,6 +1132,29 @@ void TraceThread::handleGMMUserMessageFunc(Sift::GMMUserMessage *msg)
    Core *core = m_thread->getCore();
    core->getPerformanceModel()->queuePseudoInstruction(new GMMUserMsgInstruction(msg));
    core->getPerformanceModel()->iterate();
+}
+
+void TraceThread::handleUserThreadFunc(uint64_t fs_base)
+{
+   m_thread->setUserThreadId(fs_base);
+   bool resume = Sim()->getThreadManager()->userThreadSwitchIn(fs_base);
+   if (resume)
+   {
+      LOG_PRINT_WARNING("Resuming resched thread %lx", fs_base);
+      Core *core = m_thread->getCore();
+      core->getPerformanceModel()->resumeReschedInstruction(fs_base);
+   }
+}
+
+uint64_t TraceThread::handlePullReschedFunc()
+{
+   return Sim()->getThreadManager()->pullResched();
+}
+
+void TraceThread::handleReschedFunc()
+{
+   UInt64 user_thread_id = m_thread->getUserThreadId();
+   Sim()->getThreadManager()->userResched(user_thread_id);
 }
 
 GMMTraceThread::GMMTraceThread(Thread *thread, SubsecondTime time_start, String tracefile, String responsefile, app_id_t app_id, bool cleanup)

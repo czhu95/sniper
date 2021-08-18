@@ -7,6 +7,10 @@
 #include "stats.h"
 #include "subsecond_time.h"
 #include "dynamic_micro_op.h"
+#include "lock.h"
+
+#include <map>
+#include <deque>
 
 #define DEBUG_INSN_LOG 0
 #define DEBUG_DYN_INSN_LOG 0
@@ -20,6 +24,9 @@ class MicroOpPerformanceModel : public PerformanceModel
 public:
    MicroOpPerformanceModel(Core *core, bool issue_memops);
    ~MicroOpPerformanceModel();
+
+   void queueReschedInstruction(DynamicMicroOp *uop) override;
+   void resumeReschedInstruction(UInt64 user_thread_id) override;
 
 protected:
    const CoreModel *m_core_model;
@@ -37,6 +44,9 @@ private:
    static MicroOp* m_gmmcorepull_uop;
    static MicroOp* m_gmmcoremsg_uop;
    static MicroOp* m_gmmuser_uop;
+
+   static std::map<UInt64, std::deque<DynamicMicroOp*>> m_resched_uops;
+   static Lock m_resched_uops_lock;
 
    Allocator *m_allocator; // Per-thread allocator for DynamicMicroOps
    const bool m_issue_memops;

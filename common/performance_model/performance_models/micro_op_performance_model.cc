@@ -15,6 +15,7 @@
 
 #include <cstdio>
 #include <algorithm>
+#include <iostream>
 
 MicroOp* MicroOpPerformanceModel::m_serialize_uop = NULL;
 MicroOp* MicroOpPerformanceModel::m_mfence_uop = NULL;
@@ -22,6 +23,9 @@ MicroOp* MicroOpPerformanceModel::m_memaccess_uop = NULL;
 MicroOp* MicroOpPerformanceModel::m_gmmcorepull_uop = NULL;
 MicroOp* MicroOpPerformanceModel::m_gmmcoremsg_uop = NULL;
 MicroOp* MicroOpPerformanceModel::m_gmmuser_uop = NULL;
+
+std::map<UInt64, std::deque<DynamicMicroOp*>> MicroOpPerformanceModel::m_resched_uops;
+Lock MicroOpPerformanceModel::m_resched_uops_lock;
 
 MicroOpPerformanceModel::MicroOpPerformanceModel(Core *core, bool issue_memops)
     : PerformanceModel(core)
@@ -216,12 +220,16 @@ void MicroOpPerformanceModel::handleInstruction(DynamicInstruction *dynins)
          ++num_stores;
          if (store_base_index == SIZE_MAX)
             store_base_index = m;
+
+         m_current_uops[m]->setUserThreadId(dynins->user_thread_id);
       }
       if (m_current_uops[m]->getMicroOp()->isLoad())
       {
          ++num_loads;
          if (load_base_index == SIZE_MAX)
             load_base_index = m;
+
+         m_current_uops[m]->setUserThreadId(dynins->user_thread_id);
       }
 
    }
@@ -636,4 +644,60 @@ void MicroOpPerformanceModel::handleInstruction(DynamicInstruction *dynins)
 #if DEBUG_CYCLE_COUNT_LOG
    fprintf(m_cycle_log, "[%s] latency=%d\n", itostr(m_elapsed_time).c_str(), itostr(new_latency.getElapsedTime()).c_str());
 #endif
+}
+
+void MicroOpPerformanceModel::queueReschedInstruction(DynamicMicroOp *uop)
+{
+   DynamicMicroOp *uop_copy = m_core_model->copyDynamicMicroOp(m_allocator, uop);
+   delete uop_copy;
+   DynamicMicroOp *uop_copy2 = m_core_model->copyDynamicMicroOp(m_allocator, uop);
+   m_resched_uops_lock.acquire();
+   m_resched_uops[uop->getUserThreadId()].push_back(uop_copy2);
+   std::cerr<<"["<<uop->getUserThreadId()<<"] RESCHED   "<<uop->getMicroOp()->toShortString()<<std::endl;
+   m_resched_uops_lock.release();
+}
+
+void MicroOpPerformanceModel::resumeReschedInstruction(UInt64 user_thread_id)
+{
+   while (m_resched_uops[user_thread_id].size())
+   {
+      m_current_uops.clear();
+      m_resched_uops_lock.acquire();
+      while (m_resched_uops[user_thread_id].size() && m_current_uops.size() < 128)
+      {
+         m_current_uops.push_back(m_resched_uops[user_thread_id].front());
+         m_resched_uops[user_thread_id].pop_front();
+      }
+      m_resched_uops_lock.release();
+
+      uint32_t new_num_insns = 0;
+      ComponentTime new_latency(m_elapsed_time.getLatencyGenerator()); // Get a new, empty holder for latency
+      if (m_current_uops.size() > 0)
+      {
+         uint64_t new_latency_cycles;
+         boost::tie(new_num_insns, new_latency_cycles) = simulate(m_current_uops);
+         new_latency.addCycleLatency(new_latency_cycles);
+
+#if DEBUG_INSN_LOG > 1
+         fprintf(m_insn_log, "[%llu] ", (long long unsigned int)m_cycle_count);
+         if (load_base_index != SIZE_MAX) {
+            fprintf(m_insn_log, "L");
+         }
+         if (store_base_index != SIZE_MAX) {
+            fprintf(m_insn_log, "S");
+         }
+         if (exec_base_index != SIZE_MAX) {
+            fprintf(m_insn_log, "X");
+#ifdef ENABLE_MICROOP_STRINGS
+            fprintf(m_insn_log, "-%s", m_current_uops[exec_base_index].getInstructionOpcodeName().c_str());
+#endif
+         }
+         fprintf(m_insn_log, "approx cost = %llu\n", (long long unsigned int)insn_cost);
+#endif
+      }
+
+      m_elapsed_time.addLatency(new_latency);
+      synchronize();
+      std::cerr<<"["<<user_thread_id<<"] RESUME "<<m_current_uops.size()<<" UOPS"<<std::endl;
+   }
 }

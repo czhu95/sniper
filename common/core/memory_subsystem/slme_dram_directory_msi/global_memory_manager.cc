@@ -268,6 +268,17 @@ GlobalMemoryManager::GlobalMemoryManager(Core* core,
             getCacheBlockSize());
       Sim()->getStatsManager()->logTopology("dram-cntlr", core->getId(), core->getId());
 
+      if (Sim()->getCfg()->getBoolArray("perf_model/secondary_dram/enabled", core->getId()))
+      {
+         m_secondary_dram_cntlr = new PrL1PrL2DramDirectoryMSI::DramCntlr(this,
+            getShmemPerfModel(),
+            getCacheBlockSize(),
+            true /* Secondary DRAM */);
+         Sim()->getStatsManager()->logTopology("secondary-dram-cntlr", core->getId(), core->getId());
+      }
+      else
+         m_secondary_dram_cntlr = NULL;
+
       if (Sim()->getCfg()->getBoolArray("perf_model/dram/cache/enabled", core->getId()))
       {
          m_dram_cache = new DramCache(this, getShmemPerfModel(), m_dram_controller_home_lookup, getCacheBlockSize(), m_dram_cntlr);
@@ -426,6 +437,7 @@ GlobalMemoryManager::coreInitiateMemoryAccess(
       Core::lock_signal_t lock_signal,
       Core::mem_op_t mem_op_type,
       IntPtr address, UInt32 offset,
+      IntPtr user_thread,
       Byte* data_buf, UInt32 data_length,
       Core::MemModeled modeled)
 {
@@ -437,6 +449,7 @@ GlobalMemoryManager::coreInitiateMemoryAccess(
          mem_op_type,
          address, offset,
          data_buf, data_length,
+         user_thread,
          modeled == Core::MEM_MODELED_NONE || modeled == Core::MEM_MODELED_COUNT ? false : true,
          modeled == Core::MEM_MODELED_NONE ? false : true);
 }
@@ -444,11 +457,18 @@ GlobalMemoryManager::coreInitiateMemoryAccess(
 void
 GlobalMemoryManager::sendMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
-   sendMsg(msg_type, sender_mem_component, receiver_mem_component, requester, receiver, vaddr, INVALID_ADDRESS, data_buf, data_length, where, perf, thread_num);
+   sendMsg(msg_type, sender_mem_component, receiver_mem_component, requester, receiver, vaddr, INVALID_ADDRESS, 0, data_buf, data_length, where, perf, thread_num);
 }
 
 void
 GlobalMemoryManager::sendMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, IntPtr paddr, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
+{
+   sendMsg(msg_type, sender_mem_component, receiver_mem_component, requester, receiver, vaddr, paddr, 0, data_buf, data_length, where, perf, thread_num);
+}
+
+
+void
+GlobalMemoryManager::sendMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, IntPtr paddr, IntPtr user_thread, Byte* data_buf, UInt32 data_length, HitWhere::where_t where, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num)
 {
 MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, receiver, receiver_mem_component);
    assert((data_buf == NULL) == (data_length == 0));
@@ -458,6 +478,7 @@ MYLOG("send msg %u %ul%u > %ul%u", msg_type, requester, sender_mem_component, re
 
    ShmemMsg shmem_msg(msg_type, sender_mem_component, receiver_mem_component, requester, vaddr, paddr, data_buf, data_length, perf);
    shmem_msg.setWhere(where);
+   shmem_msg.setUserThreadId(user_thread);
 
    Byte* msg_buf = shmem_msg.makeMsgBuf();
    SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(thread_num);
@@ -543,7 +564,11 @@ GlobalMemoryManager::enableModels()
    }
 
    if (m_dram_cntlr_present)
+   {
       m_dram_cntlr->getDramPerfModel()->enable();
+      if (m_secondary_dram_cntlr)
+         m_secondary_dram_cntlr->getDramPerfModel()->enable();
+   }
 }
 
 void
@@ -625,7 +650,20 @@ MYLOG("begin");
          {
             case MemComponent::GMM_CORE:
             {
-               DramCntlrInterface* dram_interface = m_dram_cache ? (DramCntlrInterface*)m_dram_cache : (DramCntlrInterface*)m_dram_cntlr;
+               policy_id_t policy_id;
+               uint64_t seg_id;
+               bool found = Sim()->getSegmentTable()->lookup(shmem_msg->getAddress(), policy_id, seg_id);
+               DramCntlrInterface* dram_interface;
+               if (m_dram_cache)
+                  dram_interface = (DramCntlrInterface*) m_dram_cache;
+               else if (policy_id == HYBRID_MEM && m_secondary_dram_cntlr)
+               {
+                  LOG_PRINT_WARNING("Accessing hybride memory");
+                  dram_interface = (DramCntlrInterface*) m_secondary_dram_cntlr;
+               }
+               else
+                  dram_interface = (DramCntlrInterface*)m_dram_cntlr;
+
                dram_interface->handleMsgFromGMM(sender, shmem_msg);
                break;
             }

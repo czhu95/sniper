@@ -13,12 +13,13 @@ class DynamicInstruction
 {
    private:
       // Private constructor: alloc() should be used
-      DynamicInstruction(Instruction *ins, IntPtr _eip)
+      DynamicInstruction(Instruction *ins, IntPtr _eip, UInt64 _user_thread_id = 0)
       {
          instruction = ins;
          eip = _eip;
          branch_info.is_branch = false;
          num_memory = 0;
+         user_thread_id = _user_thread_id;
       }
    public:
       struct BranchInfo
@@ -43,15 +44,16 @@ class DynamicInstruction
       BranchInfo branch_info;
       UInt8 num_memory;
       MemoryInfo memory_info[MAX_MEMORY];
+      UInt64 user_thread_id;
 
       static Allocator* createAllocator();
 
       ~DynamicInstruction();
 
-      static DynamicInstruction* alloc(Allocator *alloc, Instruction *ins, IntPtr eip)
+      static DynamicInstruction* alloc(Allocator *alloc, Instruction *ins, IntPtr eip, UInt64 user_thread_id = 0)
       {
          void *ptr = alloc->alloc(sizeof(DynamicInstruction));
-         DynamicInstruction *i = new(ptr) DynamicInstruction(ins, eip);
+         DynamicInstruction *i = new(ptr) DynamicInstruction(ins, eip, user_thread_id);
          return i;
       }
       static void operator delete(void* ptr) { Allocator::dealloc(ptr); }

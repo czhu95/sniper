@@ -42,6 +42,7 @@ RobSmtTimer::RobThread::RobThread(Core *_core, int window_size)
       , memoryDependencies(new MemoryDependencies())
       , m_cpiCurrentFrontEndStall(&m_cpiSMT)
 {
+   registerStatsMetric("rob_thread_uops", core->getId(), "total_uops", &m_uops_total);
 }
 
 RobSmtTimer::RobThread::~RobThread()
@@ -469,8 +470,10 @@ void RobSmtTimer::pushInstructions(smtthread_id_t thread_id, const std::vector<D
          continue;
       }
 
+      LOG_ASSERT_ERROR(!thread->rob.full(), "ROB full");
       RobEntry *entry = &thread->rob.next();
-      entry->init(*it, thread->nextSequenceNumber++);
+      entry->init(*it, thread->nextSequenceNumber);
+      thread->nextSequenceNumber ++;
 
       #ifdef DEBUG_PERCYCLE
          std::cout<<"** ["<<int(thread_id)<<"] simulate: "<<entry->uop->getMicroOp()->toShortString(true)<<std::endl;
@@ -561,106 +564,120 @@ bool RobSmtTimer::tryDispatch(smtthread_id_t thread_num, SubsecondTime &next_eve
       RobEntry *entry = &thread->rob.at(thread->m_num_in_rob);
       DynamicMicroOp &uop = *entry->uop;
 
-      // Dispatch up to 4 instructions
-      if (uops_dispatched == dispatchWidth)
-         break;
+      bool rescheduled = Sim()->getThreadManager()->getReschedStatus(uop.getUserThreadId()) != ThreadManager::RUNNING;
 
-      // This is actually in the decode stage, there's a buffer between decode and dispatch
-      // so we shouldn't do this here.
-      //// First instruction can be any size, but second and subsequent ones may only be single-uop
-      //// So, if this is not the first instruction, break if the first uop is not also the last
-      //if (instrs_dispatched > 0 && !uop.isLast())
-      //   break;
-
-      bool iCacheMiss = (uop.getICacheHitWhere() != HitWhere::L1I);
-      if (iCacheMiss)
+      if (!rescheduled)
       {
-         if (!thread->in_icache_miss)
-         {
-            #ifdef DEBUG_PERCYCLE
-               std::cout<<"-- icache miss("<<uop.getICacheLatency()<<")"<<std::endl;
-            #endif
-            thread->frontend_stalled_until = now + uop.getICacheLatency();
-            thread->in_icache_miss = true;
-            // Don't dispatch this instruction yet
-            thread->m_cpiCurrentFrontEndStall = &thread->m_cpiInstructionCache[uop.getICacheHitWhere()];
+         // Dispatch up to 4 instructions
+         if (uops_dispatched == dispatchWidth)
             break;
-         }
-      }
 
-      if (uop.getMicroOp()->isPause())
-      {
-         if (!thread->in_pause)
+         // This is actually in the decode stage, there's a buffer between decode and dispatch
+         // so we shouldn't do this here.
+         //// First instruction can be any size, but second and subsequent ones may only be single-uop
+         //// So, if this is not the first instruction, break if the first uop is not also the last
+         //if (instrs_dispatched > 0 && !uop.isLast())
+         //   break;
+
+         bool iCacheMiss = (uop.getICacheHitWhere() != HitWhere::L1I);
+         if (iCacheMiss)
          {
-            #ifdef DEBUG_PERCYCLE
-               std::cout<<"-- pause begin"<<std::endl;
-            #endif
-            // TODO: Use core-specific pause latency instead of uop exec latency.
-            thread->frontend_stalled_until = now + m_core_model->getPauseLatency();
-            thread->in_pause = true;
-            // Don't dispatch this instruction yet
-            thread->m_cpiCurrentFrontEndStall = &thread->m_cpiPause;
-            break;
+            if (!thread->in_icache_miss)
+            {
+               #ifdef DEBUG_PERCYCLE
+                  std::cout<<"-- icache miss("<<uop.getICacheLatency()<<")"<<std::endl;
+               #endif
+               thread->frontend_stalled_until = now + uop.getICacheLatency();
+               thread->in_icache_miss = true;
+               // Don't dispatch this instruction yet
+               thread->m_cpiCurrentFrontEndStall = &thread->m_cpiInstructionCache[uop.getICacheHitWhere()];
+               break;
+            }
          }
 
-      }
+         if (uop.getMicroOp()->isPause())
+         {
+            if (!thread->in_pause)
+            {
+               #ifdef DEBUG_PERCYCLE
+                  std::cout<<"-- pause begin"<<std::endl;
+               #endif
+               // TODO: Use core-specific pause latency instead of uop exec latency.
+               thread->frontend_stalled_until = now + m_core_model->getPauseLatency();
+               thread->in_pause = true;
+               // Don't dispatch this instruction yet
+               thread->m_cpiCurrentFrontEndStall = &thread->m_cpiPause;
+               break;
+            }
 
-      if (m_rs_entries_used == rsEntries)
-      {
-         thread->m_cpiCurrentFrontEndStall = &thread->m_cpiRSFull;
-         break;
-      }
+         }
 
-      if (thread->in_icache_miss)
-      {
-         // We just took the latency for this instruction, now dispatch it
-         #ifdef DEBUG_PERCYCLE
-            std::cout<<"-- icache return"<<std::endl;
-         #endif
-         thread->in_icache_miss = false;
-      }
+         if (m_rs_entries_used == rsEntries)
+         {
+            thread->m_cpiCurrentFrontEndStall = &thread->m_cpiRSFull;
+            break;
+         }
 
-      if (thread->in_pause)
-      {
-         #ifdef DEBUG_PERCYCLE
-            std::cout<<"-- pause end"<<std::endl;
-         #endif
-         thread->in_pause = false;
-      }
+         if (thread->in_icache_miss)
+         {
+            // We just took the latency for this instruction, now dispatch it
+            #ifdef DEBUG_PERCYCLE
+               std::cout<<"-- icache return"<<std::endl;
+            #endif
+            thread->in_icache_miss = false;
+         }
 
-      setDependencies(thread_num, entry);
+         if (thread->in_pause)
+         {
+            #ifdef DEBUG_PERCYCLE
+               std::cout<<"-- pause end"<<std::endl;
+            #endif
+            thread->in_pause = false;
+         }
+
+         setDependencies(thread_num, entry);
+      }
 
       entry->dispatched = now;
       ++thread->m_num_in_rob;
       ++m_rs_entries_used;
 
-      uops_dispatched++;
-      if (uop.isLast())
-         instrs_dispatched++;
-
-      // If uop is already ready, we may need to issue it in the following cycle
-      entry->ready = std::max(entry->ready, (now + 1ul).getElapsedTime());
-      next_event = std::min(next_event, entry->ready);
-
-      thread->next_event = std::min(thread->next_event, next_event);
-
-      #ifdef DEBUG_PERCYCLE
-         std::cout<<"["<<int(thread_num)<<"] DISPATCH "<<uop.getMicroOp()->toShortString()<<std::endl;
-      #endif
-
-      #ifdef ASSERT_SKIP
-         LOG_ASSERT_ERROR(will_skip == false, "Cycle would have been skipped but stuff happened");
-      #endif
-
-      // Mispredicted branch
-      if (uop.getMicroOp()->isBranch() && uop.isBranchMispredicted())
+      if (!rescheduled)
       {
-         thread->frontend_stalled_until = SubsecondTime::MaxTime();
+         uops_dispatched++;
+         if (uop.isLast())
+            instrs_dispatched++;
+
+         // If uop is already ready, we may need to issue it in the following cycle
+         entry->ready = std::max(entry->ready, (now + 1ul).getElapsedTime());
+         next_event = std::min(next_event, entry->ready);
+
+         thread->next_event = std::min(thread->next_event, next_event);
+
          #ifdef DEBUG_PERCYCLE
-            std::cout<<"-- branch mispredict"<<std::endl;
+            std::cout<<"["<<int(thread_num)<<"] DISPATCH "<<uop.getMicroOp()->toShortString()<<std::endl;
          #endif
-         thread->m_cpiCurrentFrontEndStall = &thread->m_cpiBranchPredictor;
-         break;
+
+         #ifdef ASSERT_SKIP
+            LOG_ASSERT_ERROR(will_skip == false, "Cycle would have been skipped but stuff happened");
+         #endif
+
+         // Mispredicted branch
+         if (uop.getMicroOp()->isBranch() && uop.isBranchMispredicted())
+         {
+            thread->frontend_stalled_until = SubsecondTime::MaxTime();
+            #ifdef DEBUG_PERCYCLE
+               std::cout<<"-- branch mispredict"<<std::endl;
+            #endif
+            thread->m_cpiCurrentFrontEndStall = &thread->m_cpiBranchPredictor;
+            break;
+         }
+      }
+      else
+      {
+         entry->ready = now.getElapsedTime();
+         next_event = std::min(next_event, entry->ready);
+         thread->next_event = std::min(thread->next_event, next_event);
       }
    }
 
@@ -783,66 +800,98 @@ void RobSmtTimer::issueInstruction(smtthread_id_t thread_num, uint64_t idx, Subs
    RobEntry *entry = &thread->rob[idx];
    DynamicMicroOp &uop = *entry->uop;
 
-   if ((uop.getMicroOp()->isLoad() || uop.getMicroOp()->isStore())
+   ComponentTime cycle_depend = now;
+   SubsecondTime cycle_done = now;
+
+   // if (Sim()->getThreadManager()->getReschedStatus(uop.getUserThreadId()) == ThreadManager::RESCHEDULING)
+   // {
+   //    thread->core->getPerformanceModel()->queueReschedInstruction(entry->uop);
+   //    cycle_depend = now;
+   //    cycle_done = now;
+   // }
+   if (Sim()->getThreadManager()->getReschedStatus(uop.getUserThreadId()) != ThreadManager::RUNNING)
+   {
+      thread->core->getPerformanceModel()->queueReschedInstruction(entry->uop);
+      std::cout << now << std::endl;
+      cycle_depend = now;
+      cycle_done = now;
+   }
+   else if ((uop.getMicroOp()->isLoad() || uop.getMicroOp()->isStore())
       && uop.getDCacheHitWhere() == HitWhere::UNKNOWN)
    {
+      smt_thread->core->setUserThreadId(uop.getUserThreadId());
       MemoryResult res = smt_thread->core->accessMemory(
          Core::NONE,
          uop.getMicroOp()->isLoad() ? Core::READ : Core::WRITE,
          uop.getAddress().address,
          NULL,
          uop.getMicroOp()->getMemoryAccessSize(),
+         uop.getUserThreadId(),
          Core::MEM_MODELED_RETURN,
          uop.getMicroOp()->getInstruction() ? uop.getMicroOp()->getInstruction()->getAddress() : static_cast<uint64_t>(NULL),
          now.getElapsedTime()
       );
       uint64_t latency = SubsecondTime::divideRounded(res.latency, now.getPeriod());
 
-      uop.setExecLatency(uop.getExecLatency() + latency); // execlatency already contains bypass latency
-      uop.setDCacheHitWhere(res.hit_where);
+      if (Sim()->getThreadManager()->getReschedStatus(uop.getUserThreadId()) == ThreadManager::RESCHEDULING)
+      {
+         LOG_PRINT_WARNING("Remote memory accesss (%lx), user thread id (%lx)", uop.getAddress().address, uop.getUserThreadId());
+         thread->core->getPerformanceModel()->queueReschedInstruction(entry->uop);
+         std::cout << now << std::endl;
+         cycle_depend = now;
+         cycle_done = now;
+      }
+      else
+      {
+         uop.setExecLatency(uop.getExecLatency() + latency); // execlatency already contains bypass latency
+         uop.setDCacheHitWhere(res.hit_where);
+      }
    }
 
-   if (uop.getMicroOp()->isGMMUser())
+   if (Sim()->getThreadManager()->getReschedStatus(uop.getUserThreadId()) == ThreadManager::RUNNING)
    {
-      MemoryResult res = smt_thread->core->handleGMMUserMessage(uop.getGMMUserMessage(), now);
-      uint64_t latency = SubsecondTime::divideRounded(res.latency, now.getPeriod());
-      uop.setExecLatency(uop.getExecLatency() + latency);
+      if (uop.getMicroOp()->isGMMUser())
+      {
+         MemoryResult res = smt_thread->core->handleGMMUserMessage(uop.getGMMUserMessage(), now);
+         uint64_t latency = SubsecondTime::divideRounded(res.latency, now.getPeriod());
+         uop.setExecLatency(uop.getExecLatency() + latency);
+      }
+
+      if (uop.getMicroOp()->isLoad())
+         load_queue.getCompletionTime(now, uop.getExecLatency() * now.getPeriod(), uop.getAddress().address);
+      else if (uop.getMicroOp()->isStore())
+         store_queue.getCompletionTime(now, uop.getExecLatency() * now.getPeriod(), uop.getAddress().address);
+
+      cycle_depend = now + uop.getExecLatency();   // When result is available for dependent instructions
+      cycle_done = cycle_depend + 1ul;             // When the instruction can be committed
+
+      if (uop.getMicroOp()->isLoad())
+      {
+         thread->m_loads_count++;
+         thread->m_loads_latency += uop.getExecLatency() * now.getPeriod();
+      }
+      else if (uop.getMicroOp()->isStore())
+      {
+         thread->m_stores_count++;
+         thread->m_stores_latency += uop.getExecLatency() * now.getPeriod();
+      }
+
+      if (uop.getMicroOp()->isStore())
+      {
+         last_store_done = std::max(last_store_done, cycle_done);
+         // LOG_ASSERT_ERROR(last_store_done < SubsecondTime::MS(20), "Store taking too long");
+         cycle_depend = now + 1ul;                            // For stores, forward the result immediately
+         // Stores can be removed from the ROB once they're issued to the memory hierarchy
+         // Dependent operations such as SFENCE and synchronization instructions need to wait until last_store_done
+         cycle_done = now + 1ul;
+
+         LOG_ASSERT_ERROR(entry->addressReady <= entry->ready, "%ld: Store address cannot be ready (%ld) later than the whole uop is (%ld)",
+                          entry->uop->getSequenceNumber(), entry->addressReady.getPS(), entry->ready.getPS());
+      }
+
+      if (m_rob_contention)
+         m_rob_contention->doIssue(uop);
    }
-
-   if (uop.getMicroOp()->isLoad())
-      load_queue.getCompletionTime(now, uop.getExecLatency() * now.getPeriod(), uop.getAddress().address);
-   else if (uop.getMicroOp()->isStore())
-      store_queue.getCompletionTime(now, uop.getExecLatency() * now.getPeriod(), uop.getAddress().address);
-
-   ComponentTime cycle_depend = now + uop.getExecLatency();   // When result is available for dependent instructions
-   SubsecondTime cycle_done = cycle_depend + 1ul;             // When the instruction can be committed
-
-   if (uop.getMicroOp()->isLoad())
-   {
-      thread->m_loads_count++;
-      thread->m_loads_latency += uop.getExecLatency() * now.getPeriod();
-   }
-   else if (uop.getMicroOp()->isStore())
-   {
-      thread->m_stores_count++;
-      thread->m_stores_latency += uop.getExecLatency() * now.getPeriod();
-   }
-
-   if (uop.getMicroOp()->isStore())
-   {
-      last_store_done = std::max(last_store_done, cycle_done);
-      // LOG_ASSERT_ERROR(last_store_done < SubsecondTime::MS(20), "Store taking too long");
-      cycle_depend = now + 1ul;                            // For stores, forward the result immediately
-      // Stores can be removed from the ROB once they're issued to the memory hierarchy
-      // Dependent operations such as SFENCE and synchronization instructions need to wait until last_store_done
-      cycle_done = now + 1ul;
-
-      LOG_ASSERT_ERROR(entry->addressReady <= entry->ready, "%ld: Store address cannot be ready (%ld) later than the whole uop is (%ld)",
-                       entry->uop->getSequenceNumber(), entry->addressReady.getPS(), entry->ready.getPS());
-   }
-
-   if (m_rob_contention)
-      m_rob_contention->doIssue(uop);
 
    entry->issued = now;
    entry->done = cycle_done;
@@ -905,7 +954,13 @@ void RobSmtTimer::issueInstruction(smtthread_id_t thread_num, uint64_t idx, Subs
    // After issuing a mispredicted branch: allow the ROB to refill after flushing the pipeline
    if (uop.getMicroOp()->isBranch() && uop.isBranchMispredicted())
    {
-      thread->frontend_stalled_until = now + (misprediction_penalty - 2); // The frontend needs to start 2 cycles earlier to get a total penalty of <misprediction_penalty>
+      if (Sim()->getThreadManager()->getReschedStatus(uop.getUserThreadId()) == ThreadManager::RUNNING)
+         thread->frontend_stalled_until = now + (misprediction_penalty - 2); // The frontend needs to start 2 cycles earlier to get a total penalty of <misprediction_penalty>
+      else
+         thread->frontend_stalled_until = SubsecondTime::Zero();
+
+      thread->m_cpiCurrentFrontEndStall = &thread->m_cpiBranchPredictor;
+
       #ifdef DEBUG_PERCYCLE
          std::cout<<"-- branch resolve"<<std::endl;
       #endif
@@ -943,7 +998,17 @@ bool RobSmtTimer::tryIssue(smtthread_id_t thread_num, SubsecondTime &next_event,
 
       bool canIssue = false;
 
-      if (entry->ready > now)
+      //if (Sim()->getThreadManager()->getReschedStatus(uop->getUserThreadId()) == ThreadManager::RESCHEDULING)
+      //   canIssue = false;
+
+      if (Sim()->getThreadManager()->getReschedStatus(uop->getUserThreadId()) != ThreadManager::RUNNING)
+      {
+         entry->ready = now;
+         num_issued --;
+         canIssue = true;
+      }
+
+      else if (entry->ready > now)
          canIssue = false;          // blocked by dependency
 
       else if ((no_more_load && uop->getMicroOp()->isLoad()) || (no_more_store && uop->getMicroOp()->isStore()))
@@ -984,7 +1049,7 @@ bool RobSmtTimer::tryIssue(smtthread_id_t thread_num, SubsecondTime &next_event,
 
 
       // canIssue already marks issue ports as in use, so do this one last
-      if (canIssue && m_rob_contention && ! m_rob_contention->tryIssue(*uop))
+      if (Sim()->getThreadManager()->getReschedStatus(uop->getUserThreadId()) == ThreadManager::RUNNING && canIssue && m_rob_contention && ! m_rob_contention->tryIssue(*uop))
          canIssue = false;          // blocked by structural hazard
 
 
@@ -1035,6 +1100,10 @@ bool RobSmtTimer::tryIssue(smtthread_id_t thread_num, SubsecondTime &next_event,
             break;
       }
 
+
+      if (Sim()->getThreadManager()->getReschedStatus(uop->getUserThreadId()) == ThreadManager::RESCHEDULING ||
+          Sim()->getThreadManager()->getReschedStatus(uop->getUserThreadId()) == ThreadManager::RESCHEDULED)
+          continue;
 
       if (m_rob_contention)
       {
@@ -1115,8 +1184,14 @@ SubsecondTime RobSmtTimer::doCommit()
          };
          thread->core->getPerformanceModel()->traceInstruction(entry->uop, &times);
 
-         if (entry->uop->isLast())
-            thread->instrs++;
+         bool rescheduled = false;
+         if (Sim()->getThreadManager()->getReschedStatus(entry->uop->getUserThreadId()) == ThreadManager::RUNNING)
+         {
+            if (entry->uop->isLast())
+               thread->instrs++;
+
+            rescheduled = true;
+         }
 
          entry->free();
          thread->rob.pop();
@@ -1126,7 +1201,9 @@ SubsecondTime RobSmtTimer::doCommit()
             LOG_ASSERT_ERROR(will_skip == false, "Cycle would have been skipped but stuff happened");
          #endif
 
-         ++num_committed;
+         if (!rescheduled)
+            ++num_committed;
+
          if (num_committed == commitWidth)
             break;
       }
@@ -1147,7 +1224,7 @@ bool RobSmtTimer::canExecute(smtthread_id_t thread_num)
    if (thread->frontend_stalled_until > now     // front-end is stalled due to I-cache miss or branch misprediction
        || thread->now > now                     // core lives way in the future because it just woke from idle
        || thread->m_num_in_rob >= currentWindowSize // ROB is full
-       // || !smt_thread->running                       // thread is not running
+       || !smt_thread->running                       // thread is not running
    )
    {
       return false;

@@ -245,16 +245,17 @@ GMMCore::handleMsgFromL2Cache(core_id_t sender, ShmemMsg* shmem_msg)
    //    shmem_msg->setPhysAddress(pa);
    // }
 
+   policy_id_t policy_id;
+   uint64_t seg_id;
+   Sim()->getSegmentTable()->lookup(va, policy_id, seg_id);
+
    switch (shmem_msg_type)
    {
       case ShmemMsg::EX_REQ:
       {
          MYLOG("E REQ<%u @ %lx", sender, va);
 
-         policy_id_t policy_id;
-         uint64_t seg_id;
-         Sim()->getSegmentTable()->lookup(va, policy_id, seg_id);
-         LOG_ASSERT_ERROR(policy_id == ATOMIC_UPDATE || policy_id == MIGRATION, "EX_REQ unacceptable for policy %d", policy_id);
+         LOG_ASSERT_ERROR(policy_id == ATOMIC_UPDATE || policy_id == MIGRATION || policy_id == REMOTE_MEM || policy_id == HYBRID_MEM, "EX_REQ unacceptable for policy %d", policy_id);
          // LOG_ASSERT_WARNING((policy_id - 9) / 4 == m_core_id - 16, "Policy %d written by %d", policy_id - 9, m_core_id - 16);
 
          // Add request onto a queue
@@ -393,6 +394,39 @@ GMMCore::handleMsgFromGMM(core_id_t sender, ShmemMsg* shmem_msg)
          processShReqFromL2Cache(m_dram_queue_list->front(va));
          break;
       }
+      case ShmemMsg::USER_RESCHED:
+      {
+         uint64_t address = shmem_msg->getAddress();
+         uint64_t user_thread_id = shmem_msg->getPhysAddress();
+         Sim()->getThreadManager()->resched(user_thread_id);
+         LOG_ASSERT_ERROR(m_dram_queue_list->size(address) >= 1, "0x%lx", address);
+         while (! m_dram_queue_list->empty(address))
+         {
+            ShmemReq* shmem_req = m_dram_queue_list->dequeue(address);
+            updateShmemPerf(shmem_req);
+            Byte data_buf[getMemoryManager()->getCacheBlockSize()];
+            MYLOG("MSG RESCHED>%d for %lx", shmem_req->getShmemMsg()->getRequester(), address )
+            getGlobalMemoryManager()->sendMsg(
+                  ShmemMsg::EX_REP,
+                  MemComponent::GMM_CORE, MemComponent::L2_CACHE,
+                  shmem_req->getShmemMsg()->getRequester() /* requester */,
+                  shmem_req->getShmemMsg()->getRequester() /* receiver */,
+                  address,
+                  data_buf, getMemoryManager()->getCacheBlockSize(),
+                  HitWhere::DRAM_REMOTE,
+                  shmem_req->getShmemMsg()->getPerf(),
+                  ShmemPerfModel::_SIM_THREAD);
+            delete shmem_req;
+         }
+         break;
+      }
+      case ShmemMsg::USER_RESUME:
+      {
+         SubsecondTime msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD);
+         uint64_t user_thread_id = shmem_msg->getPhysAddress();
+         Sim()->getThreadManager()->scheduleResume(user_thread_id, msg_time + SubsecondTime::US(10));
+         break;
+      }
       default:
          LOG_PRINT_ERROR("Unrecognized Shmem Msg Type: %u", shmem_msg->getMsgType());
          break;
@@ -426,7 +460,7 @@ GMMCore::processNextReqFromL2Cache(IntPtr address)
       ShmemReq* shmem_req = m_dram_queue_list->front(address);
 
       // Update the Shared Mem Cycle Counts appropriately
-      getShmemPerfModel()->updateElapsedTime(shmem_req->getTime(), ShmemPerfModel::_SIM_THREAD);
+      getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_SIM_THREAD, shmem_req->getTime());
 
       if (shmem_req->getShmemMsg()->getMsgType() == ShmemMsg::EX_REQ)
       {
@@ -531,8 +565,11 @@ GMMCore::buildGMMCoreMessage(uint64_t segid, policy_id_t policy, core_id_t sende
             case HASH_CAS:
             case ATOMIC_UPDATE:
             case MIGRATION:
+            case HYBRID_MEM:
+            case REMOTE_MEM:
                msg.type = shmem_msg->getMsgType();
                msg.payload[0] = shmem_msg->getAddress();
+               msg.payload[1] = shmem_msg->getUserThreadId();
                if (shmem_msg->getMsgType() == ShmemMsg::INV_REP)
                   msg.policy = INVALID_POLICY;
                break;
@@ -745,7 +782,7 @@ GMMCore::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
          reply_msg_type = ShmemMsg::EX_REP;
          break;
       case ShmemMsg::SH_REQ:
-         reply_msg_type = policy_id == ATOMIC_UPDATE || policy_id == MIGRATION ? ShmemMsg::EX_REP : ShmemMsg::SH_REP;
+         reply_msg_type = policy_id == ATOMIC_UPDATE || policy_id == MIGRATION || policy_id == HYBRID_MEM || policy_id == REMOTE_MEM ? ShmemMsg::EX_REP : ShmemMsg::SH_REP;
          break;
       // case ShmemMsg::EX_REQ:
       //    reply_msg_type = ShmemMsg::EX_REP;
@@ -765,6 +802,9 @@ GMMCore::processDRAMReply(core_id_t sender, ShmemMsg* shmem_msg)
    HitWhere::where_t hit_where = shmem_msg->getWhere();
    if (hit_where == HitWhere::DRAM)
       hit_where = (getGlobalMemoryManager()->getUserFromId(sender) == getGlobalMemoryManager()->getUserFromId(shmem_msg->getRequester())) ? HitWhere::DRAM_LOCAL : HitWhere::DRAM_REMOTE;
+
+   // if (policy_id == REMOTE_MEM)
+   //    hit_where = HitWhere::DRAM_REMOTE;
 
    // if (hit_where == HitWhere::DRAM_REMOTE)
    // {
@@ -836,6 +876,16 @@ GMMCore::retrieveDataAndSendToL2Cache(ShmemMsg::msg_t reply_msg_type,
 
    IntPtr phys_address = orig_shmem_msg->getPhysAddress();
    assert(phys_address != INVALID_ADDRESS);
+
+   policy_id_t policy_id;
+   uint64_t seg_id;
+   bool found = Sim()->getSegmentTable()->lookup(orig_shmem_msg->getAddress(), policy_id, seg_id);
+   // if (policy_id == REMOTE_MEM)
+   // {
+   //    // UInt64 user_thread_id = Sim()->getCoreManager()->getCoreFromID(receiver)->getUserThreadId();
+   //    // Sim()->getCoreManager()->resched(user_thread_id);
+   //    getShmemPerfModel()->setElapsedTime(ShmemPerfModel::_SIM_THREAD, shmem_req->getTime() + SubsecondTime::NS(1000));
+   // }
 
    MYLOG("Sending request to DRAM for the data");
    getGlobalMemoryManager()->sendMsg(ShmemMsg::DRAM_READ_REQ,
@@ -911,9 +961,9 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
 
    m_msg_time = getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD);
    m_last_msg_time = m_msg_time;
-   LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d, addr=%lx, process=%s, queue_delay=%s",
-                     m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(),
-                     msg->type, msg->payload[0], itostr(process_time).c_str(), itostr(queue_delay).c_str());
+   // LOG_PRINT_WARNING("[%d]core msg time: %s, type=%d, addr=%lx, process=%s, queue_delay=%s",
+   //                   m_core_id, itostr(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_USER_THREAD)).c_str(),
+   //                   msg->type, msg->payload[0], itostr(process_time).c_str(), itostr(queue_delay).c_str());
    m_dequeue_time = now;
 
    switch (msg->type)
@@ -922,6 +972,8 @@ GMMCore::handleGMMCoreMessage(Sift::GMMCoreMessage* msg, SubsecondTime now)
       case ShmemMsg::GMM_USER_DONE:
       case ShmemMsg::INV_REQ:
       case ShmemMsg::TLB_INSERT:
+      case ShmemMsg::USER_RESCHED:
+      case ShmemMsg::USER_RESUME:
          if (msg->component == MemComponent::LAST_LEVEL_CACHE)
             msg->receiver = getGlobalMemoryManager()->getUserFromId(m_core_id);
 

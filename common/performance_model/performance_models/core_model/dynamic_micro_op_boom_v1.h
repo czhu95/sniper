@@ -39,6 +39,7 @@ class DynamicMicroOpBoomV1 : public DynamicMicroOp
       virtual const char* getType() const;
 
       DynamicMicroOpBoomV1(const MicroOp *uop, const CoreModel *core_model, ComponentPeriod period);
+      DynamicMicroOpBoomV1(const DynamicMicroOp *uop);
 
       uop_port_t getPort(void) const { return uop_port; }
       uop_bypass_t getBypassType(void) const { return uop_bypass; }

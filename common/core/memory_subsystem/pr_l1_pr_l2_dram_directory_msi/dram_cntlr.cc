@@ -23,22 +23,30 @@ namespace PrL1PrL2DramDirectoryMSI
 
 DramCntlr::DramCntlr(MemoryManagerBase* memory_manager,
       ShmemPerfModel* shmem_perf_model,
-      UInt32 cache_block_size)
+      UInt32 cache_block_size,
+      bool is_secondary)
    : DramCntlrInterface(memory_manager, shmem_perf_model, cache_block_size)
    , m_reads(0)
    , m_writes(0)
 {
-   m_dram_perf_model = DramPerfModel::createDramPerfModel(
-         memory_manager->getCore()->getId(),
-         cache_block_size);
+   if (!is_secondary)
+      m_dram_perf_model = DramPerfModel::createDramPerfModel(
+            memory_manager->getCore()->getId(),
+            cache_block_size);
+   else
+      m_dram_perf_model = DramPerfModel::createSecondaryDramPerfModel(
+            memory_manager->getCore()->getId(),
+            cache_block_size);
 
    m_fault_injector = Sim()->getFaultinjectionManager()
       ? Sim()->getFaultinjectionManager()->getFaultInjector(memory_manager->getCore()->getId(), MemComponent::DRAM)
       : NULL;
 
    m_dram_access_count = new AccessCountMap[DramCntlrInterface::NUM_ACCESS_TYPES];
-   registerStatsMetric("dram", memory_manager->getCore()->getId(), "reads", &m_reads);
-   registerStatsMetric("dram", memory_manager->getCore()->getId(), "writes", &m_writes);
+
+   const char *metric_name = is_secondary ? "secondary-dram" : "dram";
+   registerStatsMetric(metric_name, memory_manager->getCore()->getId(), "reads", &m_reads);
+   registerStatsMetric(metric_name, memory_manager->getCore()->getId(), "writes", &m_writes);
 }
 
 DramCntlr::~DramCntlr()

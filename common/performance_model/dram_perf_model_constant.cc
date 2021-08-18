@@ -6,6 +6,16 @@
 #include "shmem_perf.h"
 
 DramPerfModelConstant::DramPerfModelConstant(core_id_t core_id,
+      UInt32 cache_block_size, int dummy):
+   DramPerfModel(core_id, cache_block_size),
+   m_queue_model(NULL),
+   m_dram_bandwidth(8 * Sim()->getCfg()->getFloat("perf_model/dram/per_controller_bandwidth")), // Convert bytes to bits
+   m_total_queueing_delay(SubsecondTime::Zero()),
+   m_total_access_latency(SubsecondTime::Zero())
+{
+}
+
+DramPerfModelConstant::DramPerfModelConstant(core_id_t core_id,
       UInt32 cache_block_size):
    DramPerfModel(core_id, cache_block_size),
    m_queue_model(NULL),
@@ -73,3 +83,20 @@ DramPerfModelConstant::getAccessLatency(SubsecondTime pkt_time, UInt64 pkt_size,
 
    return access_latency;
 }
+
+SecondaryDramPerfModelConstant::SecondaryDramPerfModelConstant(core_id_t core_id,
+      UInt32 cache_block_size):
+   DramPerfModelConstant(core_id, cache_block_size, 0)
+{
+   m_dram_access_cost = SubsecondTime::FS() * static_cast<uint64_t>(TimeConverter<float>::NStoFS(Sim()->getCfg()->getFloat("perf_model/secondary_dram/latency"))); // Operate in fs for higher precision before converting to uint64_t/SubsecondTime
+
+   if (Sim()->getCfg()->getBool("perf_model/dram/queue_model/enabled"))
+   {
+      m_queue_model = QueueModel::create("secondary-dram-queue", core_id, Sim()->getCfg()->getString("perf_model/dram/queue_model/type"),
+                                         m_dram_bandwidth.getRoundedLatency(8 * cache_block_size)); // bytes to bits
+   }
+
+   registerStatsMetric("secondary-dram", core_id, "total-access-latency", &m_total_access_latency);
+   registerStatsMetric("secondary-dram", core_id, "total-queueing-delay", &m_total_queueing_delay);
+}
+

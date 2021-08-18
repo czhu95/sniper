@@ -211,3 +211,8 @@ DynamicMicroOpNehalem::DynamicMicroOpNehalem(const MicroOp *uop, const CoreModel
    , uop_bypass(DynamicMicroOpNehalem::getBypassType(uop))
 {
 }
+
+DynamicMicroOpNehalem::DynamicMicroOpNehalem(const DynamicMicroOp *other)
+   : DynamicMicroOp(other)
+{
+}

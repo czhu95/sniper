@@ -6,9 +6,11 @@
 #include "core.h"
 #include "lock.h"
 #include "subsecond_time.h"
+#include "cond.h"
 
 #include <vector>
 #include <queue>
+#include <map>
 
 class TLS;
 class Thread;
@@ -40,6 +42,15 @@ public:
       STALL_GMM_PULL,         // GMM core is waiting for message
       STALL_TYPES_MAX,
    };
+
+   enum resched_status_t {
+      RUNNING,
+      RESCHEDULING,
+      RESCHEDULED,
+      RESUMING,
+      RESUMED,
+   };
+
    static const char* stall_type_names[];
 
    static thread_group_t getThreadGroup(thread_id_t);
@@ -84,6 +95,16 @@ public:
 
    bool areAllCoresRunning();
 
+   void resched(UInt64 user_thread_id);
+   void scheduleResume(UInt64 user_thread_id, SubsecondTime time);
+   void tryResume(SubsecondTime now);
+   void stop();
+   UInt64 pullResched();
+   void userResched(UInt64 user_thread_id);
+   void userThreadSwitchOut(UInt64 user_thread_id);
+   bool userThreadSwitchIn(UInt64 user_thread_id);
+   resched_status_t getReschedStatus(UInt64 user_thread_id);
+
 protected:
    struct ThreadSpawnRequest
    {
@@ -112,6 +133,17 @@ protected:
 
    virtual Thread* createThread_unlocked(app_id_t app_id, thread_id_t creator_thread_id);
    void wakeUpWaiter(thread_id_t thread_id, SubsecondTime time);
+
+   void resume(UInt64 user_thread_id);
+
+   std::deque<UInt64> m_resched_queue;
+   std::deque<UInt64> m_resume_queue;
+   std::map<SubsecondTime, UInt64> m_scheduled_resume;
+   Lock m_resched_lock;
+   ConditionVariable m_resched_cond;
+   UInt64 m_last_resched;
+
+   std::map<UInt64, resched_status_t> m_resched_state;
 };
 
 class UserThreadManager: public ThreadManager

@@ -67,8 +67,9 @@ namespace SingleLevelMemory
          bool isPrefetch;
          VirtCacheCntlr* cache_cntlr;
          SubsecondTime t_issue;
-         CacheDirectoryWaiter(bool _exclusive, bool _isPrefetch, VirtCacheCntlr* _cache_cntlr, SubsecondTime _t_issue) :
-            exclusive(_exclusive), isPrefetch(_isPrefetch), cache_cntlr(_cache_cntlr), t_issue(_t_issue)
+         IntPtr user_thread;
+         CacheDirectoryWaiter(bool _exclusive, bool _isPrefetch, VirtCacheCntlr* _cache_cntlr, SubsecondTime _t_issue, IntPtr _user_thread = 0) :
+            exclusive(_exclusive), isPrefetch(_isPrefetch), cache_cntlr(_cache_cntlr), t_issue(_t_issue), user_thread(_user_thread)
          {}
    };
 
@@ -238,7 +239,7 @@ namespace SingleLevelMemory
          void writeCacheBlock(IntPtr address, UInt32 offset, Byte* data_buf, UInt32 data_length, ShmemPerfModel::Thread_t thread_num, SubsecondTime slme_available);
 
          // Handle Request from previous level cache
-         HitWhere::where_t processShmemReqFromPrevCache(VirtCacheCntlr* requester, Core::mem_op_t mem_op_type, IntPtr address, bool modeled, bool count, Prefetch::prefetch_type_t isPrefetch, SubsecondTime t_issue, bool have_write_lock);
+         HitWhere::where_t processShmemReqFromPrevCache(VirtCacheCntlr* requester, Core::mem_op_t mem_op_type, IntPtr address, IntPtr user_thread, bool modeled, bool count, Prefetch::prefetch_type_t isPrefetch, SubsecondTime t_issue, bool have_write_lock);
 
 
          // Process GMM subscription
@@ -247,10 +248,10 @@ namespace SingleLevelMemory
 
          // Process Request from L1 Cache
          boost::tuple<HitWhere::where_t, SubsecondTime> accessDRAM(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefetch, Byte* data_buf);
-         void initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefetch, SubsecondTime t_issue);
-         void processExReqToGMM(IntPtr address);
-         void processShReqToGMM(IntPtr address);
-         void processUpgradeReqToGMM(IntPtr address, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num);
+         void initiateDirectoryAccess(Core::mem_op_t mem_op_type, IntPtr address, IntPtr user_thread, bool isPrefetch, SubsecondTime t_issue);
+         void processExReqToGMM(IntPtr address, IntPtr user_thread);
+         void processShReqToGMM(IntPtr address, IntPtr user_thread);
+         void processUpgradeReqToGMM(IntPtr address, IntPtr user_thread, ShmemPerf *perf, ShmemPerfModel::Thread_t thread_num);
 
          // Process Request from Dram Dir
          void processExRepFromGMM(core_id_t sender, core_id_t requester, ShmemMsg* shmem_msg);
@@ -312,6 +313,7 @@ namespace SingleLevelMemory
                Core::mem_op_t mem_op_type,
                IntPtr ca_address, UInt32 offset,
                Byte* data_buf, UInt32 data_length,
+               IntPtr user_thread,
                bool modeled,
                bool count);
          void updateHits(Core::mem_op_t mem_op_type, UInt64 hits);

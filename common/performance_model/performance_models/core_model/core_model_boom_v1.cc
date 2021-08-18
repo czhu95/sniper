@@ -110,3 +110,12 @@ DynamicMicroOp* CoreModelBoomV1::createDynamicMicroOp(Allocator *alloc, const Mi
    info->uop_alu = DynamicMicroOpBoomV1::getAlu(uop);
    return info;
 }
+
+DynamicMicroOp* CoreModelBoomV1::copyDynamicMicroOp(Allocator *alloc, const DynamicMicroOp *uop) const
+{
+   DynamicMicroOpBoomV1 *info = DynamicMicroOp::copy<DynamicMicroOpBoomV1>(alloc, uop);
+   info->uop_port = DynamicMicroOpBoomV1::getPort(uop->getMicroOp());
+   info->uop_bypass = DynamicMicroOpBoomV1::getBypassType(uop->getMicroOp());
+   info->uop_alu = DynamicMicroOpBoomV1::getAlu(uop->getMicroOp());
+   return info;
+}

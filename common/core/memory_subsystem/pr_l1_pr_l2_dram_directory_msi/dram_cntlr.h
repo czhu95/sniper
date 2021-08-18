@@ -38,7 +38,7 @@ namespace PrL1PrL2DramDirectoryMSI
       public:
          DramCntlr(MemoryManagerBase* memory_manager,
                ShmemPerfModel* shmem_perf_model,
-               UInt32 cache_block_size);
+               UInt32 cache_block_size, bool is_secondary = false);
 
          ~DramCntlr();
 

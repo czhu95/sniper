@@ -35,6 +35,7 @@ namespace SingleLevelMemory
          DramCache* m_dram_cache;
          GMMCoreFast* m_gmm_core;
          PrL1PrL2DramDirectoryMSI::DramCntlr* m_dram_cntlr;
+         PrL1PrL2DramDirectoryMSI::DramCntlr* m_secondary_dram_cntlr;
          AddressHomeLookup* m_dram_controller_home_lookup;
 
          core_id_t m_core_id_master;
@@ -87,12 +88,22 @@ namespace SingleLevelMemory
                Core::mem_op_t mem_op_type,
                IntPtr address, UInt32 offset,
                Byte* data_buf, UInt32 data_length,
+               Core::MemModeled modeled) { return coreInitiateMemoryAccess(mem_component, lock_signal, mem_op_type, address, offset, 0, data_buf, data_length, modeled); }
+
+         HitWhere::where_t coreInitiateMemoryAccess(
+               MemComponent::component_t mem_component,
+               Core::lock_signal_t lock_signal,
+               Core::mem_op_t mem_op_type,
+               IntPtr address, UInt32 offset,
+               IntPtr user_thread,
+               Byte* data_buf, UInt32 data_length,
                Core::MemModeled modeled);
 
          void handleMsgFromNetwork(NetPacket& packet) override;
 
          void sendMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, Byte* data_buf = NULL, UInt32 data_length = 0, HitWhere::where_t where = HitWhere::UNKNOWN, ShmemPerf *perf = NULL, ShmemPerfModel::Thread_t thread_num = ShmemPerfModel::NUM_CORE_THREADS) override;
          void sendMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, IntPtr paddr, Byte* data_buf = NULL, UInt32 data_length = 0, HitWhere::where_t where = HitWhere::UNKNOWN, ShmemPerf *perf = NULL, ShmemPerfModel::Thread_t thread_num = ShmemPerfModel::NUM_CORE_THREADS);
+         void sendMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, core_id_t receiver, IntPtr vaddr, IntPtr paddr, IntPtr user_thread, Byte* data_buf = NULL, UInt32 data_length = 0, HitWhere::where_t where = HitWhere::UNKNOWN, ShmemPerf *perf = NULL, ShmemPerfModel::Thread_t thread_num = ShmemPerfModel::NUM_CORE_THREADS);
 
          void broadcastMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr vaddr, Byte* data_buf = NULL, UInt32 data_length = 0, ShmemPerf *perf = NULL, ShmemPerfModel::Thread_t thread_num = ShmemPerfModel::NUM_CORE_THREADS) override;
          void broadcastMsg(ShmemMsg::msg_t msg_type, MemComponent::component_t sender_mem_component, MemComponent::component_t receiver_mem_component, core_id_t requester, IntPtr vaddr, IntPtr paddr, Byte* data_buf = NULL, UInt32 data_length = 0, ShmemPerf *perf = NULL, ShmemPerfModel::Thread_t thread_num = ShmemPerfModel::NUM_CORE_THREADS);

@@ -87,3 +87,8 @@ DynamicMicroOpBoomV1::DynamicMicroOpBoomV1(const MicroOp *uop, const CoreModel *
    , uop_bypass(DynamicMicroOpBoomV1::getBypassType(uop))
 {
 }
+
+DynamicMicroOpBoomV1::DynamicMicroOpBoomV1(const DynamicMicroOp *uop)
+   : DynamicMicroOp(uop)
+{
+}

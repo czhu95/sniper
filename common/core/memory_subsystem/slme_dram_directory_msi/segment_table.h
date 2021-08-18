@@ -15,6 +15,8 @@ typedef int32_t policy_id_t;
 #define ATOMIC_SWAP         4
 #define HASH_CAS            5
 #define MIGRATION           6
+#define HYBRID_MEM          7
+#define REMOTE_MEM          8
 
 namespace SingleLevelMemory
 {

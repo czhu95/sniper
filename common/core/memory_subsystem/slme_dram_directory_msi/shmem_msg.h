@@ -54,6 +54,9 @@ namespace SingleLevelMemory
             USER_CACHE_READ_REP,
             USER_CACHE_WRITE_REP,
 
+            USER_RESCHED,
+            USER_RESUME,
+
             POLICY_INIT,
 
             GMM_USER_DONE,
@@ -73,6 +76,7 @@ namespace SingleLevelMemory
          HitWhere::where_t m_where;
          IntPtr m_vaddr;
          IntPtr m_paddr;
+         IntPtr m_thread;
          Byte* m_data_buf;
          UInt32 m_data_length;
          ShmemPerf* m_perf;
@@ -107,6 +111,8 @@ namespace SingleLevelMemory
          IntPtr getAddress() { return m_vaddr; }
          void setPhysAddress(IntPtr addr) { m_paddr = addr; }
          IntPtr getPhysAddress() { return m_paddr; }
+         void setUserThreadId(IntPtr thread) {m_thread = thread; }
+         IntPtr getUserThreadId() { return m_thread; }
          Byte* getDataBuf() { return m_data_buf; }
          UInt32 getDataLength() { return m_data_length; }
          HitWhere::where_t getWhere() { return m_where; }

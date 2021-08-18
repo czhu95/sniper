@@ -3,6 +3,11 @@
 
 #include "cond.h"
 #include "subsecond_time.h"
+#include "log.h"
+#include "thread_manager.h"
+#include "simulator.h"
+
+#include <atomic>
 
 class Core;
 class SyscallMdl;
@@ -13,6 +18,7 @@ class Thread
 {
    public:
       typedef UInt64 (*va2pa_func_t)(UInt64 arg, UInt64 va);
+      std::atomic<bool> sleep;
 
    private:
       thread_id_t m_thread_id;
@@ -28,6 +34,7 @@ class Thread
       RoutineTracerThread *m_rtn_tracer;
       va2pa_func_t m_va2pa_func;
       UInt64 m_va2pa_arg;
+      UInt64 m_user_thread_id;
 
    public:
       Thread(thread_id_t thread_id, app_id_t app_id);
@@ -79,6 +86,13 @@ class Thread
       bool updateCoreTLS(int threadIndex = -1);
 
       SyscallMdl *getSyscallMdl() { return m_syscall_model; }
+
+      UInt64 getUserThreadId() const { return m_user_thread_id; }
+      void setUserThreadId(UInt64 threadid) {
+         Sim()->getThreadManager()->userThreadSwitchOut(m_user_thread_id);
+         m_user_thread_id = threadid;
+         LOG_PRINT_WARNING("user thread %lx on %d", m_user_thread_id, m_thread_id);
+      }
 };
 
 #endif // __THREAD_H

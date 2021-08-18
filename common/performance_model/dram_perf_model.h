@@ -27,6 +27,7 @@ class DramPerfModel
 
    public:
       static DramPerfModel* createDramPerfModel(core_id_t core_id, UInt32 cache_block_size);
+      static DramPerfModel* createSecondaryDramPerfModel(core_id_t core_id, UInt32 cache_block_size);
 
       DramPerfModel(core_id_t core_id, UInt64 cache_block_size) : m_enabled(false), m_num_accesses(0) {}
       virtual ~DramPerfModel() {}

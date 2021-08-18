@@ -2105,6 +2105,10 @@ CacheCntlr::updateCounters(Core::mem_op_t mem_op_type, IntPtr address, bool cach
          if (! cache_hit) {
             stats.load_misses++;
             stats.load_misses_state[state]++;
+            // if (m_mem_component == MemComponent::L1_ICACHE)
+            // {
+            //     fprintf(stdout, "L1_ICACHE Miss @ %lx\n", address);
+            // }
             if (overlapping) stats.load_overlapping_misses++;
          }
       }

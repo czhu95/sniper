@@ -141,9 +141,9 @@ void PerformanceModel::handleBranchMispredict()
    }
 }
 
-DynamicInstruction* PerformanceModel::createDynamicInstruction(Instruction *ins, IntPtr eip)
+DynamicInstruction* PerformanceModel::createDynamicInstruction(Instruction *ins, IntPtr eip, UInt64 user_thread_id)
 {
-   return DynamicInstruction::alloc(m_dynins_alloc, ins, eip);
+   return DynamicInstruction::alloc(m_dynins_alloc, ins, eip, user_thread_id);
 }
 
 void PerformanceModel::queuePseudoInstruction(PseudoInstruction *i)
@@ -202,6 +202,8 @@ void PerformanceModel::queueInstruction(DynamicInstruction *ins)
    #else
       m_instruction_queue.push(ins);
    #endif
+   // if (m_core->getId() < 2)
+   //    LOG_PRINT_WARNING("%d", m_instruction_queue.size());
 }
 
 void PerformanceModel::handleIdleInstruction(PseudoInstruction *instruction)
@@ -317,6 +319,7 @@ void PerformanceModel::iterate()
       m_instruction_queue.pop();
    }
 
+   Sim()->getThreadManager()->tryResume(m_elapsed_time);
    synchronize();
 }
 
@@ -352,4 +355,15 @@ void PerformanceModel::setElapsedTime(SubsecondTime time)
       // First thread to run on this core
       m_cpiStartTime += insn_cost;
    incrementIdleElapsedTime(insn_cost);
+}
+
+
+void PerformanceModel::queueReschedInstruction(DynamicMicroOp *uop)
+{
+   LOG_PRINT_ERROR("Not implemented");
+}
+
+void PerformanceModel::resumeReschedInstruction(UInt64 user_thread_id)
+{
+   LOG_PRINT_ERROR("Not implemented");
 }

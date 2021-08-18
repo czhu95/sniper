@@ -81,6 +81,7 @@ QueueModelHistoryList::computeQueueDelay(SubsecondTime pkt_time, SubsecondTime p
    // Increment total queue requests
    m_total_requests ++;
    m_total_queue_delay += queue_delay;
+   LOG_PRINT_WARNING("queue_delay: %s, total_queue_delay: %s, total_processing_time: %s", itostr(queue_delay).c_str(), itostr(m_total_queue_delay).c_str(), itostr(m_utilized_time).c_str());
 
    return queue_delay;
 }

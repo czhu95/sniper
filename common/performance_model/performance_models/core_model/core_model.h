@@ -32,6 +32,7 @@ class CoreModel
 
       // Populate a MicroOp's core-specific information object
       virtual DynamicMicroOp* createDynamicMicroOp(Allocator *alloc, const MicroOp *uop, ComponentPeriod period) const = 0;
+      virtual DynamicMicroOp* copyDynamicMicroOp(Allocator *alloc, const DynamicMicroOp *uop) const = 0;
 
       virtual unsigned int getInstructionLatency(const MicroOp *uop) const = 0;
       virtual unsigned int getAluLatency(const MicroOp *uop) const = 0;
@@ -46,13 +47,19 @@ template <typename T> class BaseCoreModel : public CoreModel
       virtual Allocator* createDMOAllocator() const
       {
          // We need to be able to hold one (Pin) trace worth of MicroOps, as we can only stop functional simulation at the skew barrier
-         return new TypedAllocator<T, 8192>();
+         return new TypedAllocator<T, 32768>();
       }
 
       DynamicMicroOp* createDynamicMicroOp(Allocator *alloc, const MicroOp *uop, ComponentPeriod period) const
       {
          T *info = DynamicMicroOp::alloc<T>(alloc, uop, this, period);
          return info;
+      }
+
+      DynamicMicroOp* copyDynamicMicroOp(Allocator *alloc, const DynamicMicroOp *other)
+      {
+        T *info = DynamicMicroOp::copy<T>(alloc, other);
+        return info;
       }
 };
 

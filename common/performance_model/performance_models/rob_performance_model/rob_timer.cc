@@ -268,6 +268,23 @@ boost::tuple<uint64_t,SubsecondTime> RobTimer::simulate(const std::vector<Dynami
          continue;
       }
 
+      // if (this->rob.full())
+      // {
+      //    while (true)
+      //    {
+      //       uint64_t instructionsExecuted;
+      //       SubsecondTime latency;
+      //       execute(instructionsExecuted, latency);
+      //       totalInsnExec += instructionsExecuted;
+      //       totalLat += latency;
+      //       if (latency == SubsecondTime::Zero())
+      //       {
+      //          // LOG_ASSERT_ERROR(m_core->getThread() || m_num_in_rob < 2, "");
+      //          break;
+      //       }
+      //    }
+      // }
+      LOG_ASSERT_ERROR(!this->rob.full(), "ROB full");
       RobEntry *entry = &this->rob.next();
       entry->init(*it, nextSequenceNumber++);
 

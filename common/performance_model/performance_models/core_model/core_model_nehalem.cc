@@ -197,3 +197,12 @@ DynamicMicroOp* CoreModelNehalem::createDynamicMicroOp(Allocator *alloc, const M
    info->uop_alu = DynamicMicroOpNehalem::getAlu(uop);
    return info;
 }
+
+DynamicMicroOp* CoreModelNehalem::copyDynamicMicroOp(Allocator *alloc, const DynamicMicroOp *uop) const
+{
+   DynamicMicroOpNehalem *info = DynamicMicroOp::copy<DynamicMicroOpNehalem>(alloc, uop);
+   info->uop_port = DynamicMicroOpNehalem::getPort(uop->getMicroOp());
+   info->uop_bypass = DynamicMicroOpNehalem::getBypassType(uop->getMicroOp());
+   info->uop_alu = DynamicMicroOpNehalem::getAlu(uop->getMicroOp());
+   return info;
+}
